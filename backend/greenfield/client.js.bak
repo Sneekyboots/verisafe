@@ -1,0 +1,254 @@
+"use strict";
+
+/**
+ * Veris Greenfield Client — SDK v2.x compatible
+ *
+ * Fix: visibility must use VisibilityType enum (numeric), not string.
+ *   VisibilityType.VISIBILITY_TYPE_PUBLIC_READ = 1
+ *   "VISIBILITY_TYPE_PUBLIC_READ" (string) → rejected by chain
+ */
+
+const path       = require("path");
+const fs         = require("fs");
+const { ethers } = require("ethers");
+
+const LOCAL_DIR = path.join(__dirname, "../greenfield-proofs");
+const BUCKET    = process.env.GREENFIELD_BUCKET   || "verisafe-oracle-proofs";
+const GF_RPC    = process.env.GREENFIELD_RPC      || "https://gnfd-testnet-fullnode-tendermint-us.bnbchain.org";
+const GF_CHAIN  = parseInt(process.env.GREENFIELD_CHAIN_ID || "5600");
+
+const GAS_LIMIT = 2000000;
+const GAS_PRICE = "5000000000";
+
+// VisibilityType enum values (from greenfield proto)
+const VisibilityType = {
+    VISIBILITY_TYPE_UNSPECIFIED:    0,
+    VISIBILITY_TYPE_PUBLIC_READ:    1,
+    VISIBILITY_TYPE_PRIVATE:        2,
+    VISIBILITY_TYPE_INHERIT:        3,
+};
+
+// RedundancyType enum values
+const RedundancyType = {
+    REDUNDANCY_EC_TYPE:             0,
+    REDUNDANCY_REPLICA_TYPE:        1,
+};
+
+let _sdkClient = null;
+let _Long      = null;
+
+async function getSDKClient() {
+    if (_sdkClient) return _sdkClient;
+    try {
+        const { Client } = require("@bnb-chain/greenfield-js-sdk");
+        _sdkClient = Client.create(GF_RPC, String(GF_CHAIN));
+        return _sdkClient;
+    } catch {
+        return null;
+    }
+}
+
+function getLong() {
+    if (_Long) return _Long;
+    try {
+        const sdk = require("@bnb-chain/greenfield-js-sdk");
+        if (sdk.Long) { _Long = sdk.Long; return _Long; }
+    } catch {}
+    try { _Long = require("long"); return _Long; } catch {}
+    _Long = {
+        fromString: (s) => ({ toString: () => s, toNumber: () => Number(s), isZero: () => Number(s) === 0 }),
+        fromNumber: (n) => ({ toString: () => String(n), toNumber: () => n, isZero: () => n === 0 }),
+    };
+    return _Long;
+}
+
+function extractSpList(sps) {
+    if (!sps) return [];
+    if (Array.isArray(sps)) return sps;
+    if (typeof sps === "object") {
+        const vals = Object.values(sps);
+        if (vals.length > 0 && typeof vals[0] === "object") return vals;
+    }
+    return [];
+}
+
+function extractSpAddr(sp) {
+    if (!sp) return null;
+    return sp.operatorAddress || sp.OperatorAddress || sp.operator_address
+        || sp.primarySpAddress || sp.endpoint
+        || (typeof sp === "string" ? sp : null);
+}
+
+async function broadcastTx(tx, payer, privateKey) {
+    const simulateInfo = await tx.simulate({ denom: "BNB" });
+    return tx.broadcast({
+        denom:      "BNB",
+        gasLimit:   Number(simulateInfo?.gasLimit ?? GAS_LIMIT),
+        gasPrice:   simulateInfo?.gasPrice ?? GAS_PRICE,
+        payer,
+        granter:    "",
+        privateKey,
+    });
+}
+
+async function ensureBucket(wallet) {
+    const client = await getSDKClient();
+    if (!client) return false;
+
+    try {
+        await client.bucket.headBucket(BUCKET);
+        return true;
+    } catch {
+        try {
+            const Long   = getLong();
+            const sps    = await client.sp.getStorageProviders();
+            const spList = extractSpList(sps);
+            const realSps = spList.filter(sp =>
+                !sp?.description?.moniker?.toLowerCase().includes("test") &&
+                !sp?.description?.moniker?.toLowerCase().includes("qa")
+            );
+            const primarySp = (realSps.length > 0 ? realSps : spList)[0];
+            const spAddr    = extractSpAddr(primarySp);
+
+            if (!spAddr) {
+                throw new Error(`SP addr not found. Sample: ${JSON.stringify(primarySp)?.slice(0, 300)}`);
+            }
+
+            const tx = await client.bucket.createBucket({
+                bucketName:       BUCKET,
+                creator:          wallet.address,
+                visibility:       VisibilityType.VISIBILITY_TYPE_PUBLIC_READ,  // numeric enum
+                chargedReadQuota: Long.fromString("0"),
+                primarySpAddress: spAddr,
+                paymentAddress:   wallet.address,
+            });
+
+            const res = await broadcastTx(tx, wallet.address, wallet.privateKey);
+            console.log(`[Greenfield] ✅ Created bucket: ${BUCKET}`, res?.transactionHash ?? "");
+            return true;
+        } catch (e) {
+            console.warn(`[Greenfield] Bucket create failed: ${e.message}`);
+            return false;
+        }
+    }
+}
+
+async function uploadProof(proofData, txHash, wallet) {
+    const objectName = `veris-proof-${proofData.timestamp}-${txHash.slice(0, 10)}.json`;
+
+    const record = {
+        protocol:    "groth16-bn128",
+        circuit:     "price_commitment.circom",
+        version:     "v2",
+        public: {
+            price:      proofData.price,
+            priceUSD:   proofData.priceUSD,
+            timestamp:  proofData.timestamp,
+            commitment: proofData.commitment,
+        },
+        zkProof: {
+            proof:         proofData.proof,
+            publicSignals: proofData.publicSignals,
+        },
+        witness:  { salt: proofData.salt },
+        sources:  proofData.sources || null,
+        onChain: {
+            txHash,
+            chain:    "BSC Testnet (97)",
+            contract: process.env.VERIS_ORACLE_V2,
+            explorer: `https://testnet.bscscan.com/tx/${txHash}`,
+        },
+        storedAt:  new Date().toISOString(),
+        submitter: wallet.address,
+    };
+
+    const greenfieldRef = ethers.keccak256(ethers.toUtf8Bytes(objectName));
+    const bytes         = Buffer.from(JSON.stringify(record, null, 2));
+
+    fs.mkdirSync(LOCAL_DIR, { recursive: true });
+    fs.writeFileSync(path.join(LOCAL_DIR, objectName), JSON.stringify(record, null, 2));
+
+    let onGreenfield = false;
+    const client = await getSDKClient();
+
+    if (client && wallet) {
+        try {
+            const Long    = getLong();
+            const sps     = await client.sp.getStorageProviders();
+            const spList  = extractSpList(sps);
+            const realSps = spList.filter(sp =>
+                !sp?.description?.moniker?.toLowerCase().includes("test") &&
+                !sp?.description?.moniker?.toLowerCase().includes("qa")
+            );
+            const primarySp = (realSps.length > 0 ? realSps : spList)[0];
+            const spAddr    = extractSpAddr(primarySp);
+
+            if (!spAddr) throw new Error(`SP addr not found. Keys: ${JSON.stringify(primarySp ? Object.keys(primarySp) : null)}`);
+
+            const createTx = await client.object.createObject({
+                bucketName:      BUCKET,
+                objectName,
+                creator:         wallet.address,
+                visibility:      VisibilityType.VISIBILITY_TYPE_PUBLIC_READ,  // numeric enum
+                contentType:     "application/json",
+                redundancyType:  RedundancyType.REDUNDANCY_EC_TYPE,           // numeric enum
+                payloadSize:     Long.fromNumber(bytes.length),
+                expectChecksums: [],
+            });
+
+            const createRes = await broadcastTx(createTx, wallet.address, wallet.privateKey);
+
+            await client.object.uploadObject(
+                {
+                    bucketName: BUCKET,
+                    objectName,
+                    body:       bytes,
+                    txnHash:    createRes?.transactionHash,
+                },
+                {
+                    type:       "ECDSA",
+                    privateKey: wallet.privateKey,
+                }
+            );
+
+            console.log(`[Greenfield] ✅ Uploaded: ${objectName}`);
+            onGreenfield = true;
+        } catch (e) {
+            console.warn(`[Greenfield] Upload failed (local fallback): ${e.message}`);
+        }
+    }
+
+    return {
+        objectName,
+        greenfieldRef,
+        onGreenfield,
+        localPath: path.join(LOCAL_DIR, objectName),
+        viewUrl:   `https://testnet.greenfield.bnbchain.org/buckets/${BUCKET}/${objectName}`,
+    };
+}
+
+async function listProofs(limit = 20) {
+    const client = await getSDKClient();
+    if (client) {
+        try {
+            const { objectList } = await client.object.listObjects({
+                bucketName: BUCKET,
+                endpoint:   process.env.SP_ADDRESS || "https://gnfd-testnet-sp1.nodereal.io",
+            });
+            return objectList.objects.slice(0, limit).map(o => ({
+                name:   o.objectInfo.objectName,
+                size:   Number(o.objectInfo.payloadSize),
+                source: "greenfield",
+            }));
+        } catch { /* fall through */ }
+    }
+
+    if (!fs.existsSync(LOCAL_DIR)) return [];
+    return fs.readdirSync(LOCAL_DIR)
+        .filter(f => f.endsWith(".json"))
+        .slice(-limit)
+        .reverse()
+        .map(f => ({ name: f, source: "local" }));
+}
+
+module.exports = { ensureBucket, uploadProof, listProofs, BUCKET };
