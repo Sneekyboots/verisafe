@@ -17,17 +17,16 @@ pragma solidity ^0.8.20;
  * Query fee: 0 for internal Verisafe contracts, 0.001 BNB for external.
  */
 contract VerisOracle {
-
     // ── State ────────────────────────────────────────────────────────────
 
     address public owner;
     address public authorizedSubmitter; // off-chain agent wallet
 
     struct PriceRecord {
-        uint256 price;        // BNB/USD with 8 decimals (e.g. 35000000000 = $350.00)
+        uint256 price; // BNB/USD with 8 decimals (e.g. 35000000000 = $350.00)
         uint256 timestamp;
-        bytes32 commitment;   // keccak256(price || timestamp || salt)
-        bool    verified;
+        bytes32 commitment; // keccak256(price || timestamp || salt)
+        bool verified;
     }
 
     PriceRecord public latestPrice;
@@ -35,7 +34,7 @@ contract VerisOracle {
     // Whitelist of contracts that query for free (VaultFactory, LiquidationEngine)
     mapping(address => bool) public freeCallers;
 
-    uint256 public constant QUERY_FEE    = 0.001 ether;
+    uint256 public constant QUERY_FEE = 0.001 ether;
     uint256 public constant MAX_STALENESS = 1 hours;
 
     // ── Events ───────────────────────────────────────────────────────────
@@ -58,7 +57,7 @@ contract VerisOracle {
 
     constructor(address _submitter) {
         if (_submitter == address(0)) revert ZeroAddress();
-        owner               = msg.sender;
+        owner = msg.sender;
         authorizedSubmitter = _submitter;
     }
 
@@ -87,24 +86,15 @@ contract VerisOracle {
      * the vault interaction. Judges will see "VerisOracle: PriceUpdated" on
      * the BSC testnet explorer.
      */
-    function submitPrice(
-        uint256 price,
-        uint256 timestamp,
-        bytes32 commitment
-    ) external onlySubmitter {
+    function submitPrice(uint256 price, uint256 timestamp, bytes32 commitment) external onlySubmitter {
         // Timestamp must be recent (prevents replay of old proofs)
-        if (timestamp > block.timestamp)         revert TimestampNotFresh();
+        if (timestamp > block.timestamp) revert TimestampNotFresh();
         if (block.timestamp - timestamp > 5 minutes) revert TimestampNotFresh();
 
         // Price sanity check: BNB between $10 and $100,000
         require(price >= 10 * 1e8 && price <= 100_000 * 1e8, "VerisOracle: price out of bounds");
 
-        latestPrice = PriceRecord({
-            price:      price,
-            timestamp:  timestamp,
-            commitment: commitment,
-            verified:   true
-        });
+        latestPrice = PriceRecord({price: price, timestamp: timestamp, commitment: commitment, verified: true});
 
         emit PriceUpdated(price, timestamp, commitment);
     }
@@ -113,11 +103,7 @@ contract VerisOracle {
      * @notice Reveal the salt to let anyone verify the commitment on-chain.
      *         Optional — used for public auditability after the fact.
      */
-    function verifyCommitment(
-        uint256 price,
-        uint256 timestamp,
-        bytes32 salt
-    ) external view returns (bool) {
+    function verifyCommitment(uint256 price, uint256 timestamp, bytes32 salt) external view returns (bool) {
         bytes32 expected = keccak256(abi.encodePacked(price, timestamp, salt));
         return expected == latestPrice.commitment;
     }

@@ -12,10 +12,9 @@ pragma solidity ^0.8.20;
  * Add OZ ERC721 inheritance for production.
  */
 contract CreditNFT {
-
     // ── ERC-721 Minimal Implementation ───────────────────────────────────
 
-    string public name   = "Verisafe Credit";
+    string public name = "Verisafe Credit";
     string public symbol = "VSCREDIT";
 
     mapping(uint256 => address) public ownerOf;
@@ -29,11 +28,11 @@ contract CreditNFT {
     // ── Credit Data ───────────────────────────────────────────────────────
 
     struct CreditLine {
-        uint256 creditLimitCents;  // max credit in USD cents
-        uint256 usedCents;         // amount currently used
-        uint256 expiry;            // unix timestamp
-        address vault;             // backing CollateralVault on BSC
-        bool    active;
+        uint256 creditLimitCents; // max credit in USD cents
+        uint256 usedCents; // amount currently used
+        uint256 expiry; // unix timestamp
+        address vault; // backing CollateralVault on BSC
+        bool active;
     }
 
     mapping(uint256 => CreditLine) public creditLines;
@@ -41,7 +40,7 @@ contract CreditNFT {
     // ── Access Control ────────────────────────────────────────────────────
 
     address public owner;
-    mapping(address => bool) public authorizedVaults;  // CollateralVaults on BSC
+    mapping(address => bool) public authorizedVaults; // CollateralVaults on BSC
 
     uint256 private _tokenIdCounter;
 
@@ -90,25 +89,19 @@ contract CreditNFT {
      * @param vault           Address of the backing CollateralVault
      * @return tokenId        The minted NFT token ID
      */
-    function mint(
-        address to,
-        uint256 limitCents,
-        uint256 initialUsed,
-        uint256 expiry,
-        address vault
-    ) external onlyAuthorizedVault returns (uint256 tokenId) {
+    function mint(address to, uint256 limitCents, uint256 initialUsed, uint256 expiry, address vault)
+        external
+        onlyAuthorizedVault
+        returns (uint256 tokenId)
+    {
         _tokenIdCounter++;
         tokenId = _tokenIdCounter;
 
-        ownerOf[tokenId]  = to;
-        balanceOf[to]     += 1;
+        ownerOf[tokenId] = to;
+        balanceOf[to] += 1;
 
         creditLines[tokenId] = CreditLine({
-            creditLimitCents: limitCents,
-            usedCents:        initialUsed,
-            expiry:           expiry,
-            vault:            vault,
-            active:           true
+            creditLimitCents: limitCents, usedCents: initialUsed, expiry: expiry, vault: vault, active: true
         });
 
         emit Transfer(address(0), to, tokenId);
@@ -124,17 +117,13 @@ contract CreditNFT {
      *         In production: called via Binance Pay merchant SDK.
      *         In demo: call directly to show installment scheduling.
      */
-    function spend(
-        uint256 tokenId,
-        uint256 amountCents,
-        address merchant
-    ) external {
+    function spend(uint256 tokenId, uint256 amountCents, address merchant) external {
         if (ownerOf[tokenId] == address(0)) revert TokenDoesNotExist();
         if (msg.sender != ownerOf[tokenId]) revert NotTokenOwner();
 
         CreditLine storage cl = creditLines[tokenId];
-        if (!cl.active)                            revert CreditInactive();
-        if (block.timestamp > cl.expiry)           revert CreditExpired();
+        if (!cl.active) revert CreditInactive();
+        if (block.timestamp > cl.expiry) revert CreditExpired();
         if (cl.usedCents + amountCents > cl.creditLimitCents) revert InsufficientCredit();
 
         cl.usedCents += amountCents;
@@ -155,7 +144,7 @@ contract CreditNFT {
         creditLines[tokenId].active = false;
 
         balanceOf[tokenOwner] -= 1;
-        ownerOf[tokenId]       = address(0);
+        ownerOf[tokenId] = address(0);
 
         emit Transfer(tokenOwner, address(0), tokenId);
         emit CreditRevoked(tokenId);
@@ -168,22 +157,20 @@ contract CreditNFT {
      *         Returns available credit and whether it's valid.
      *         $0.001 gas on opBNB. This is the merchant UX.
      */
-    function verify(uint256 tokenId) external view returns (
-        bool    valid,
-        uint256 availableCents,
-        uint256 limitCents,
-        uint256 expiry,
-        address vault
-    ) {
+    function verify(uint256 tokenId)
+        external
+        view
+        returns (bool valid, uint256 availableCents, uint256 limitCents, uint256 expiry, address vault)
+    {
         if (ownerOf[tokenId] == address(0)) return (false, 0, 0, 0, address(0));
 
         CreditLine storage cl = creditLines[tokenId];
 
-        valid          = cl.active && block.timestamp <= cl.expiry;
+        valid = cl.active && block.timestamp <= cl.expiry;
         availableCents = cl.creditLimitCents - cl.usedCents;
-        limitCents     = cl.creditLimitCents;
-        expiry         = cl.expiry;
-        vault          = cl.vault;
+        limitCents = cl.creditLimitCents;
+        expiry = cl.expiry;
+        vault = cl.vault;
     }
 
     // ── Admin ─────────────────────────────────────────────────────────────
@@ -201,11 +188,12 @@ contract CreditNFT {
 
     function transferFrom(address from, address to, uint256 tokenId) external {
         if (ownerOf[tokenId] != from) revert NotTokenOwner();
-        if (msg.sender != from && getApproved[tokenId] != msg.sender && !isApprovedForAll[from][msg.sender])
+        if (msg.sender != from && getApproved[tokenId] != msg.sender && !isApprovedForAll[from][msg.sender]) {
             revert NotTokenOwner();
+        }
 
         balanceOf[from] -= 1;
-        balanceOf[to]   += 1;
+        balanceOf[to] += 1;
         ownerOf[tokenId] = to;
         delete getApproved[tokenId];
 

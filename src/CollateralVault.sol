@@ -20,31 +20,30 @@ import "./CreditNFT.sol";
  *   4. Default → LiquidationEngine calls liquidate()
  */
 contract CollateralVault {
-
     // ── Constants ────────────────────────────────────────────────────────
 
-    uint256 public constant LTV_RATIO           = 70;   // 70% max credit
+    uint256 public constant LTV_RATIO = 70; // 70% max credit
     uint256 public constant LIQUIDATION_THRESHOLD = 85; // liquidate at 85% LTV
-    uint256 public constant PRECISION            = 100;
-    uint256 public constant BNB_DECIMALS         = 1e18;
-    uint256 public constant PRICE_DECIMALS       = 1e8;  // Chainlink/Veris 8 decimals
+    uint256 public constant PRECISION = 100;
+    uint256 public constant BNB_DECIMALS = 1e18;
+    uint256 public constant PRICE_DECIMALS = 1e8; // Chainlink/Veris 8 decimals
 
     // ── State ────────────────────────────────────────────────────────────
 
-    address public owner;           // The user this vault belongs to
-    address public factory;         // VaultFactory that deployed this
+    address public owner; // The user this vault belongs to
+    address public factory; // VaultFactory that deployed this
     address public liquidationEngine;
 
     VerisOracle public verisOracle;
-    CreditNFT   public creditNFT;
+    CreditNFT public creditNFT;
 
-    uint256 public depositedBNB;    // in wei
-    uint256 public creditLineUSD;   // in USD cents (e.g. 17500 = $175.00)
-    uint256 public debtUSD;         // current outstanding debt in USD cents
-    uint256 public creditNFTId;     // token ID of the active Credit NFT
+    uint256 public depositedBNB; // in wei
+    uint256 public creditLineUSD; // in USD cents (e.g. 17500 = $175.00)
+    uint256 public debtUSD; // current outstanding debt in USD cents
+    uint256 public creditNFTId; // token ID of the active Credit NFT
 
-    bool public creditActive;       // true when a credit line is open
-    bool public locked;             // true when vault is locked (credit active)
+    bool public creditActive; // true when a credit line is open
+    bool public locked; // true when vault is locked (credit active)
 
     // ── Events ───────────────────────────────────────────────────────────
 
@@ -77,10 +76,10 @@ contract CollateralVault {
         address _creditNFT,
         address _liquidationEngine
     ) {
-        owner             = _owner;
-        factory           = _factory;
-        verisOracle       = VerisOracle(payable(_verisOracle));
-        creditNFT         = CreditNFT(_creditNFT);
+        owner = _owner;
+        factory = _factory;
+        verisOracle = VerisOracle(payable(_verisOracle));
+        creditNFT = CreditNFT(_creditNFT);
         liquidationEngine = _liquidationEngine;
     }
 
@@ -125,12 +124,11 @@ contract CollateralVault {
         if (depositedBNB == 0) revert InsufficientCollateral();
 
         // Get verified price from Veris oracle (free — vault is whitelisted)
-        (uint256 bnbPriceUSD, ) = verisOracle.getPrice{value: 0}();
+        (uint256 bnbPriceUSD,) = verisOracle.getPrice{value: 0}();
 
         // Calculate collateral value in USD cents
         // depositedBNB (wei) * price (8 dec) / 1e18 / 1e8 * 100 (for cents)
-        uint256 collateralValueCents = (depositedBNB * bnbPriceUSD * 100)
-            / (BNB_DECIMALS * PRICE_DECIMALS);
+        uint256 collateralValueCents = (depositedBNB * bnbPriceUSD * 100) / (BNB_DECIMALS * PRICE_DECIMALS);
 
         // Max credit at 70% LTV
         uint256 maxCreditCents = (collateralValueCents * LTV_RATIO) / PRECISION;
@@ -138,19 +136,13 @@ contract CollateralVault {
         if (requestedUSD > maxCreditCents) revert RequestExceedsCreditLine();
 
         creditLineUSD = maxCreditCents;
-        debtUSD       = requestedUSD;
-        creditActive  = true;
-        locked        = true;
+        debtUSD = requestedUSD;
+        creditActive = true;
+        locked = true;
 
         // Mint Credit NFT on opBNB — represents the credit guarantee
         // Expiry: 30 days from now
-        creditNFTId = creditNFT.mint(
-            owner,
-            maxCreditCents,
-            requestedUSD,
-            block.timestamp + 30 days,
-            address(this)
-        );
+        creditNFTId = creditNFT.mint(owner, maxCreditCents, requestedUSD, block.timestamp + 30 days, address(this));
 
         emit CreditRequested(owner, maxCreditCents, creditNFTId);
     }
@@ -164,16 +156,15 @@ contract CollateralVault {
 
         // Simple repayment: accepts BNB, converts at current oracle price
         // In production this would accept USDT. For demo BNB repayment works.
-        (uint256 bnbPriceUSD, ) = verisOracle.getPrice{value: 0}();
+        (uint256 bnbPriceUSD,) = verisOracle.getPrice{value: 0}();
 
-        uint256 repaidCents = (msg.value * bnbPriceUSD * 100)
-            / (BNB_DECIMALS * PRICE_DECIMALS);
+        uint256 repaidCents = (msg.value * bnbPriceUSD * 100) / (BNB_DECIMALS * PRICE_DECIMALS);
 
         if (repaidCents >= debtUSD) {
             // Full repayment
-            debtUSD      = 0;
+            debtUSD = 0;
             creditActive = false;
-            locked       = false;
+            locked = false;
 
             // Revoke Credit NFT
             creditNFT.revoke(creditNFTId);
@@ -202,7 +193,7 @@ contract CollateralVault {
 
         depositedBNB = 0;
         creditActive = false;
-        locked       = false;
+        locked = false;
 
         if (creditActive) {
             creditNFT.revoke(creditNFTId);
@@ -221,8 +212,8 @@ contract CollateralVault {
 
         depositedBNB = 0;
         creditActive = false;
-        locked       = false;
-        debtUSD      = 0;
+        locked = false;
+        debtUSD = 0;
 
         creditNFT.revoke(creditNFTId);
 
@@ -241,11 +232,10 @@ contract CollateralVault {
     function getCurrentLTV() external view returns (uint256 ltv, bool shouldLiquidate) {
         if (debtUSD == 0 || depositedBNB == 0) return (0, false);
 
-        (uint256 bnbPriceUSD, , bool fresh) = verisOracle.getPriceUnsafe();
+        (uint256 bnbPriceUSD,, bool fresh) = verisOracle.getPriceUnsafe();
         if (!fresh) return (0, false);
 
-        uint256 collateralValueCents = (depositedBNB * bnbPriceUSD * 100)
-            / (BNB_DECIMALS * PRICE_DECIMALS);
+        uint256 collateralValueCents = (depositedBNB * bnbPriceUSD * 100) / (BNB_DECIMALS * PRICE_DECIMALS);
 
         if (collateralValueCents == 0) return (100, true);
 
@@ -253,14 +243,18 @@ contract CollateralVault {
         shouldLiquidate = ltv >= LIQUIDATION_THRESHOLD;
     }
 
-    function getVaultInfo() external view returns (
-        uint256 _depositedBNB,
-        uint256 _creditLineUSD,
-        uint256 _debtUSD,
-        bool    _creditActive,
-        bool    _locked,
-        uint256 _nftId
-    ) {
+    function getVaultInfo()
+        external
+        view
+        returns (
+            uint256 _depositedBNB,
+            uint256 _creditLineUSD,
+            uint256 _debtUSD,
+            bool _creditActive,
+            bool _locked,
+            uint256 _nftId
+        )
+    {
         return (depositedBNB, creditLineUSD, debtUSD, creditActive, locked, creditNFTId);
     }
 

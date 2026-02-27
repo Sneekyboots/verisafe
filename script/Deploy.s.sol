@@ -23,15 +23,14 @@ import "../src/LiquidationEngine.sol";
  *     --verify
  */
 contract DeployVerisafe is Script {
-
     // ── BSC Testnet Constants ─────────────────────────────────────────────
     address constant PANCAKE_ROUTER = 0xD99D1c33F9fC3444f8101754aBC46c52416550D1;
-    address constant WBNB           = 0xae13d989daC2f0dEbFf460aC112a837C89BAa7cd;
-    address constant USDT_TESTNET   = 0x337610d27C682e347c9CD60bd4b3b107c9D34Def;
+    address constant WBNB = 0xae13d989daC2f0dEbFf460aC112a837C89BAa7cd;
+    address constant USDT_TESTNET = 0x337610d27C682e347c9CD60bd4b3b107c9D34Def;
 
     function run() external {
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
-        address deployer    = vm.addr(deployerKey);
+        address deployer = vm.addr(deployerKey);
 
         console.log("=== Verisafe Deployment ===");
         console.log("Deployer:", deployer);
@@ -51,20 +50,12 @@ contract DeployVerisafe is Script {
         console.log("CreditNFT:        ", address(creditNFT));
 
         // ── Step 3: VaultFactory ──────────────────────────────────────────
-        VaultFactory factory = new VaultFactory(
-            address(verisOracle),
-            address(creditNFT)
-        );
+        VaultFactory factory = new VaultFactory(address(verisOracle), address(creditNFT));
         console.log("VaultFactory:     ", address(factory));
 
         // ── Step 4: LiquidationEngine ─────────────────────────────────────
-        LiquidationEngine liquidationEngine = new LiquidationEngine(
-            address(verisOracle),
-            address(factory),
-            PANCAKE_ROUTER,
-            WBNB,
-            USDT_TESTNET
-        );
+        LiquidationEngine liquidationEngine =
+            new LiquidationEngine(address(verisOracle), address(factory), PANCAKE_ROUTER, WBNB, USDT_TESTNET);
         console.log("LiquidationEngine:", address(liquidationEngine));
 
         // ── Step 5: Wire up dependencies ─────────────────────────────────
