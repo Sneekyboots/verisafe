@@ -6,7 +6,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi';
 
-export default function Home() {
+function HomeContent() {
   const dotsRef = useRef<HTMLDivElement>(null);
   const { isConnected } = useAccount();
   const [mounted, setMounted] = useState(false);
@@ -28,6 +28,10 @@ export default function Home() {
     window.addEventListener("mousemove", handleMouseMove);
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, []);
+
+  if (!mounted) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-[#faf9f6] text-slate-800 font-sans selection:bg-yellow-200 relative flex flex-col items-center overflow-x-hidden">
@@ -163,4 +167,8 @@ export default function Home() {
       </div>
     </div>
   );
+}
+
+export default function Home() {
+  return <HomeContent />;
 }
