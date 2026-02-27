@@ -19,7 +19,6 @@ import "./CreditNFT.sol";
  *   User calls vault.requestCredit() → Veris prices it, NFT minted
  */
 contract VaultFactory {
-
     // ── State ────────────────────────────────────────────────────────────
 
     address public owner;
@@ -27,8 +26,8 @@ contract VaultFactory {
     address public creditNFT;
     address public liquidationEngine;
 
-    mapping(address => address) public vaultOf;       // user → their vault
-    address[] public allVaults;                        // for protocol-wide tracking
+    mapping(address => address) public vaultOf; // user → their vault
+    address[] public allVaults; // for protocol-wide tracking
 
     bool public paused;
 
@@ -48,16 +47,13 @@ contract VaultFactory {
 
     // ── Constructor ───────────────────────────────────────────────────────
 
-    constructor(
-        address _verisOracle,
-        address _creditNFT
-    ) {
+    constructor(address _verisOracle, address _creditNFT) {
         if (_verisOracle == address(0)) revert ZeroAddress();
-        if (_creditNFT   == address(0)) revert ZeroAddress();
+        if (_creditNFT == address(0)) revert ZeroAddress();
 
-        owner        = msg.sender;
-        verisOracle  = _verisOracle;
-        creditNFT    = _creditNFT;
+        owner = msg.sender;
+        verisOracle = _verisOracle;
+        creditNFT = _creditNFT;
     }
 
     modifier onlyOwner() {
@@ -81,13 +77,8 @@ contract VaultFactory {
         if (liquidationEngine == address(0)) revert LiquidationEngineNotSet();
 
         // Deploy fresh vault contract owned by msg.sender
-        CollateralVault newVault = new CollateralVault(
-            msg.sender,
-            address(this),
-            verisOracle,
-            creditNFT,
-            liquidationEngine
-        );
+        CollateralVault newVault =
+            new CollateralVault(msg.sender, address(this), verisOracle, creditNFT, liquidationEngine);
 
         vault = address(newVault);
         vaultOf[msg.sender] = vault;
@@ -122,9 +113,7 @@ contract VaultFactory {
      * @notice Get all vaults with their LTV status — used by LiquidationEngine
      *         to scan for vaults that need liquidation.
      */
-    function getVaultsPaginated(uint256 start, uint256 end)
-        external view returns (address[] memory)
-    {
+    function getVaultsPaginated(uint256 start, uint256 end) external view returns (address[] memory) {
         if (end > allVaults.length) end = allVaults.length;
         address[] memory result = new address[](end - start);
         for (uint256 i = start; i < end; i++) {
