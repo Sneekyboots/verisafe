@@ -22,21 +22,21 @@
 
 require("dotenv").config({ path: require("path").join(__dirname, "../../.env") });
 
-const { ethers }                  = require("ethers");
-const path                        = require("path");
-const fs                          = require("fs");
+const { ethers } = require("ethers");
+const path = require("path");
+const fs = require("fs");
 const { generateProof, verifyProof } = require("../zk/groth16-prover");
-const { fetchAggregatedPrice }    = require("./price-fetcher");
+const { fetchAggregatedPrice } = require("./price-fetcher");
 const { ensureBucket, uploadProof } = require("../greenfield/client");
 
 // ── Config ────────────────────────────────────────────────────────────────
 
 const ORACLE_ADDRESS = process.env.VERIS_ORACLE_V2;
-const PK             = process.env.PRIVATE_KEY;
+const PK = process.env.PRIVATE_KEY;
 const DEFAULT_INTERVAL_MS = 60_000;
 
 const RPC_LIST = [
-    process.env.BSC_TESTNET_RPC             || "https://data-seed-prebsc-1-s1.binance.org:8545",
+    process.env.BSC_TESTNET_RPC || "https://data-seed-prebsc-1-s1.binance.org:8545",
     "https://data-seed-prebsc-2-s1.binance.org:8545",
     "https://data-seed-prebsc-1-s2.binance.org:8545",
     "https://bsc-testnet.drpc.org",
@@ -54,11 +54,11 @@ const LOG_DIR = path.join(__dirname, "../../agent/logs");
 fs.mkdirSync(LOG_DIR, { recursive: true });
 
 function log(level, msg, data = {}) {
-    const ts    = new Date().toISOString();
+    const ts = new Date().toISOString();
     const extra = Object.keys(data).length ? " " + JSON.stringify(data) : "";
-    const line  = `[${ts}] [${level.toUpperCase()}] ${msg}${extra}`;
+    const line = `[${ts}] [${level.toUpperCase()}] ${msg}${extra}`;
     console.log(line);
-    const file  = path.join(LOG_DIR, `oracle-${ts.slice(0, 10)}.log`);
+    const file = path.join(LOG_DIR, `oracle-${ts.slice(0, 10)}.log`);
     fs.appendFileSync(file, JSON.stringify({ ts, level, msg, ...data }) + "\n");
 }
 
@@ -96,13 +96,13 @@ async function retry(fn, attempts = 3, label = "") {
 async function healthCheck() {
     log("info", "── Health Check ──");
     const provider = await getProvider();
-    const wallet   = new ethers.Wallet(PK, provider);
-    const balance  = await provider.getBalance(wallet.address);
+    const wallet = new ethers.Wallet(PK, provider);
+    const balance = await provider.getBalance(wallet.address);
     log("info", "Wallet", { address: wallet.address, balance: ethers.formatEther(balance) + " BNB" });
 
     const oracle = new ethers.Contract(ORACLE_ADDRESS, ORACLE_ABI, provider);
     try {
-        const p   = await oracle.latestPrice();
+        const p = await oracle.latestPrice();
         const age = Math.floor(Date.now() / 1000) - Number(p.timestamp);
         log("info", "Oracle", { price: "$" + (Number(p.price) / 1e8).toFixed(2), age: age + "s", zkVerified: p.zkVerified });
     } catch (e) {
@@ -123,17 +123,17 @@ async function submitOnce(overridePrice = null) {
 
     // 1. Provider + wallet
     const provider = await retry(getProvider, 3, "RPC");
-    const wallet   = new ethers.Wallet(PK, provider);
-    const oracle   = new ethers.Contract(ORACLE_ADDRESS, ORACLE_ABI, wallet);
+    const wallet = new ethers.Wallet(PK, provider);
+    const oracle = new ethers.Contract(ORACLE_ADDRESS, ORACLE_ABI, wallet);
 
     // 2. Fetch aggregated price
     log("info", "Fetching price from 4 sources...");
     const priceResult = await retry(() => fetchAggregatedPrice(overridePrice), 3, "price fetch");
     log("info", "Price", {
-        value:      "$" + priceResult.price.toFixed(2),
-        sources:    priceResult.validCount,
-        spreadBps:  priceResult.spread,
-        override:   priceResult.override,
+        value: "$" + priceResult.price.toFixed(2),
+        sources: priceResult.validCount,
+        spreadBps: priceResult.spread,
+        override: priceResult.override,
     });
 
     // 3. Generate ZK proof
@@ -191,7 +191,7 @@ async function submitOnce(overridePrice = null) {
     log("info", "TX sent", { hash: tx.hash, explorer: `https://testnet.bscscan.com/tx/${tx.hash}` });
     const receipt = await tx.wait();
     log("info", "✅ ZK PROOF VERIFIED ON-CHAIN", {
-        block:   receipt.blockNumber,
+        block: receipt.blockNumber,
         gasUsed: receipt.gasUsed.toString(),
         elapsed: ((Date.now() - t0) / 1000).toFixed(1) + "s",
     });
@@ -202,15 +202,15 @@ async function submitOnce(overridePrice = null) {
     } catch { /* non-fatal */ }
 
     const result = {
-        priceUSD:      priceResult.price,
-        commitment:    proofData.commitment,
-        txHash:        tx.hash,
-        block:         receipt.blockNumber,
-        zkVerified:    true,
+        priceUSD: priceResult.price,
+        commitment: proofData.commitment,
+        txHash: tx.hash,
+        block: receipt.blockNumber,
+        zkVerified: true,
         greenfieldRef: gfResult.greenfieldRef,
-        onGreenfield:  gfResult.onGreenfield,
-        sources:       proofData.sources,
-        elapsedMs:     Date.now() - t0,
+        onGreenfield: gfResult.onGreenfield,
+        sources: proofData.sources,
+        elapsedMs: Date.now() - t0,
     };
 
     // Save submission record
@@ -230,7 +230,7 @@ async function submitOnce(overridePrice = null) {
 ║  TX:          ${tx.hash.slice(0, 16)}...          ║
 ║  Block:       ${String(receipt.blockNumber).padEnd(29)}║
 ║  Greenfield:  ${gfResult.onGreenfield ? "✅ on-chain storage" : "📁 local fallback  "}           ║
-║  Elapsed:     ${((result.elapsedMs)/1000).toFixed(1) + "s" .padEnd(29)}║
+║  Elapsed:     ${((result.elapsedMs) / 1000).toFixed(1) + "s".padEnd(29)}║
 ╚══════════════════════════════════════════════╝
 `);
 
@@ -241,8 +241,8 @@ async function submitOnce(overridePrice = null) {
 
 async function runContinuous(intervalMs, overridePrice = null) {
     log("info", "Continuous oracle agent started", {
-        interval:  intervalMs / 1000 + "s",
-        oracle:    ORACLE_ADDRESS,
+        interval: intervalMs / 1000 + "s",
+        oracle: ORACLE_ADDRESS,
     });
 
     let ok = 0, fail = 0;
@@ -263,25 +263,25 @@ async function runContinuous(intervalMs, overridePrice = null) {
 // ── Entry point ───────────────────────────────────────────────────────────
 
 async function main() {
-    const args         = process.argv.slice(2);
-    const continuous   = args.includes("--continuous");
-    const health       = args.includes("--health");
-    const priceIdx     = args.indexOf("--price");
-    const intervalIdx  = args.indexOf("--interval");
-    const override     = priceIdx    !== -1 ? args[priceIdx + 1]    : null;
-    const interval     = intervalIdx !== -1
+    const args = process.argv.slice(2);
+    const continuous = args.includes("--continuous");
+    const health = args.includes("--health");
+    const priceIdx = args.indexOf("--price");
+    const intervalIdx = args.indexOf("--interval");
+    const override = priceIdx !== -1 ? args[priceIdx + 1] : null;
+    const interval = intervalIdx !== -1
         ? parseInt(args[intervalIdx + 1]) * 1000
         : DEFAULT_INTERVAL_MS;
 
-    if (!PK)             { console.error("PRIVATE_KEY not set in .env"); process.exit(1); }
-    if (!ORACLE_ADDRESS) { console.error("VERIS_ORACLE_V2 not set in .env");  process.exit(1); }
+    if (!PK) { console.error("PRIVATE_KEY not set in .env"); process.exit(1); }
+    if (!ORACLE_ADDRESS) { console.error("VERIS_ORACLE_V2 not set in .env"); process.exit(1); }
 
     console.log(`\n🔮 VERIS ORACLE AGENT — Production`);
     console.log(`   Oracle:  ${ORACLE_ADDRESS}`);
     console.log(`   Mode:    ${health ? "health" : continuous ? "continuous" : "single"}\n`);
 
-    if (health)      return healthCheck();
-    if (continuous)  return runContinuous(interval, override);
+    if (health) return healthCheck();
+    if (continuous) return runContinuous(interval, override);
     return submitOnce(override);
 }
 

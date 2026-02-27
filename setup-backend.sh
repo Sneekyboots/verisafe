@@ -3,7 +3,7 @@
 # Run from ~/verisafe: bash setup-backend.sh
 
 set -e
-cd ~/verisafe
+cd "$(dirname "$0")"
 
 echo "── Installing dependencies ──"
 npm install express cors ethers dotenv snarkjs @bnb-chain/greenfield-js-sdk 2>/dev/null || \
@@ -56,7 +56,13 @@ fi
 
 echo ""
 echo "── Checking .env ──"
-source .env
+if [ -f "backend/.env" ]; then
+  source backend/.env
+elif [ -f ".env" ]; then
+  source .env
+else
+  echo "  ❌ backend/.env not found"
+fi
 
 check_var() {
   if [ -z "${!1}" ]; then
