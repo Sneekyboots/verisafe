@@ -1,0 +1,14 @@
+{
+  "dependencies": {
+    "@bnb-chain/greenfield-js-sdk": "^2.2.2",
+    "@bnb-chain/reed-solomon": "^1.1.4",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "ethers": "^6.16.0",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "circomlib": "^2.0.5",
+    "snarkjs": "^0.7.6"
+  }
+}
