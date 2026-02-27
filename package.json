@@ -1,0 +1,11 @@
+{
+  "dependencies": {
+    "@bnb-chain/greenfield-js-sdk": "^2.2.2",
+    "circomlib": "^2.0.5",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "ethers": "^6.16.0",
+    "express": "^5.2.1",
+    "snarkjs": "^0.7.6"
+  }
+}

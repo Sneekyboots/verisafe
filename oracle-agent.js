@@ -72,6 +72,7 @@ function generateCommitment(price8dec, timestamp) {
 async function submitPrice(overridePrice = null) {
   // Setup
   const provider = new ethers.JsonRpcProvider(CONFIG.rpc);
+  const pk = CONFIG.privateKey.startsWith('0x') ? CONFIG.privateKey : '0x' + CONFIG.privateKey;
   const wallet   = new ethers.Wallet(CONFIG.privateKey, provider);
   const oracle   = new ethers.Contract(CONFIG.oracleAddress, ORACLE_ABI, wallet);
 
