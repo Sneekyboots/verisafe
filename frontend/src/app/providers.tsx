@@ -9,7 +9,7 @@ import '@rainbow-me/rainbowkit/styles.css';
 
 const config = getDefaultConfig({
     appName: 'Verisafe',
-    projectId: '6ce8c16d5673ec2bc7de4772da34ac2c', // Example project ID
+    projectId: '2bb9dd3e1b6ccc8dc3ba5e89faa7324d', // Example project ID
     chains: [mainnet, sepolia],
     ssr: true,
 });
