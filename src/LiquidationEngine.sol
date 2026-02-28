@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "./VerisOracle.sol";
+import "./VerisOracleV2.sol";
 import "./CollateralVault.sol";
 import "./VaultFactory.sol";
 
@@ -21,7 +21,7 @@ interface IERC20 {
 
 contract LiquidationEngine {
     address public owner;
-    VerisOracle public verisOracle;
+    VerisOracleV2 public verisOracle;
     VaultFactory public vaultFactory;
     address public pancakeRouter;
     address public WBNB;
@@ -59,7 +59,7 @@ contract LiquidationEngine {
         if (_vaultFactory == address(0)) revert ZeroAddress();
         if (_pancakeRouter == address(0)) revert ZeroAddress();
         owner = msg.sender;
-        verisOracle = VerisOracle(payable(_verisOracle));
+        verisOracle = VerisOracleV2(payable(_verisOracle));
         vaultFactory = VaultFactory(_vaultFactory);
         pancakeRouter = _pancakeRouter;
         WBNB = _wbnb;

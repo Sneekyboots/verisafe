@@ -6,7 +6,8 @@ import { parseEther } from 'viem';
 
 const VAULT_ABI = [
     { inputs: [], name: 'deposit', outputs: [], stateMutability: 'payable', type: 'function' },
-    { inputs: [{ name: 'requestedUSD', type: 'uint256' }], name: 'requestCredit', outputs: [], stateMutability: 'nonpayable', type: 'function' }
+    { inputs: [{ name: 'requestedUSD', type: 'uint256' }], name: 'requestCredit', outputs: [], stateMutability: 'nonpayable', type: 'function' },
+    { inputs: [], name: 'repay', outputs: [], stateMutability: 'payable', type: 'function' }
 ] as const;
 
 const MOCK_ERC20_ABI = [
@@ -35,6 +36,10 @@ export default function VaultDashboard({ vaultAddress }: { vaultAddress: string 
     // Borrow State
     const [borrowAmount, setBorrowAmount] = useState<string>("");
     const [isBorrowing, setIsBorrowing] = useState(false);
+
+    // Repay State
+    const [repayAmount, setRepayAmount] = useState<string>("");
+    const [isRepaying, setIsRepaying] = useState(false);
 
     const [statusMsg, setStatusMsg] = useState<string>("");
 
@@ -172,6 +177,38 @@ export default function VaultDashboard({ vaultAddress }: { vaultAddress: string 
     };
 
     // ✅ Fixed: reads the actual symbol from the contract before calling wallet_watchAsset
+
+    const handleRepay = async () => {
+        if (!repayAmount || isNaN(Number(repayAmount)) || Number(repayAmount) <= 0) {
+            setStatusMsg("Please enter a valid BNB amount to repay.");
+            return;
+        }
+
+        try {
+            setIsRepaying(true);
+            setStatusMsg(`Repaying ${repayAmount} BNB — confirm in wallet...`);
+
+            const hash = await writeContractAsync({
+                address: vaultAddress as `0x${string}`,
+                abi: VAULT_ABI,
+                functionName: 'repay',
+                value: parseEther(repayAmount),
+            });
+
+            setStatusMsg("Transaction sent, awaiting confirmation...");
+            if (publicClient) await publicClient.waitForTransactionReceipt({ hash });
+
+            setStatusMsg("Repaid successfully! Vault state updating...");
+            setRepayAmount("");
+            setTimeout(() => fetchVault(), 2000);
+            setTimeout(() => setStatusMsg(""), 5000);
+        } catch (err: any) {
+            console.error(err);
+            setStatusMsg("Repay failed: " + (err.shortMessage || err.message || "Unknown error"));
+        } finally {
+            setIsRepaying(false);
+        }
+    };
     const addTokenToWallet = async (currency: "USDT" | "vBNB") => {
         try {
             const tokenAddress = currency === "USDT" ? MOCK_USDT : MOCK_VBNB;
@@ -354,6 +391,34 @@ export default function VaultDashboard({ vaultAddress }: { vaultAddress: string 
                                 </Button>
                             </div>
                         </div>
+
+                        {/* Repay Debt */}
+                        {vaultData?.ltv?.debtUSD > 0 && (
+                            <div className="flex flex-col gap-3 w-full mt-6 border-t-2 border-dashed border-slate-300 pt-6">
+                                <label className="font-bold text-slate-700 flex items-center gap-2">
+                                    <CreditCard className="w-5 h-5 text-rose-500" /> Repay Debt (BNB)
+                                </label>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="number"
+                                        step="0.001"
+                                        min="0"
+                                        placeholder="e.g. 0.05"
+                                        value={repayAmount}
+                                        onChange={(e) => setRepayAmount(e.target.value)}
+                                        className="flex-1 w-full border-2 border-slate-800 bg-white px-4 py-2 font-bold text-lg hand-drawn-border-alt focus:outline-none focus:ring-4 focus:ring-rose-200"
+                                    />
+                                    <Button
+                                        onClick={handleRepay}
+                                        disabled={isRepaying || isStaking || isBorrowing}
+                                        className="h-auto px-6 text-lg bg-rose-600 hover:bg-rose-500 text-white font-bold hand-drawn-border shadow-[4px_4px_0px_rgba(0,0,0,0.4)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all disabled:opacity-50"
+                                    >
+                                        {isRepaying ? <Loader2 className="w-5 h-5 animate-spin" /> : "Repay"}
+                                    </Button>
+                                </div>
+                                <p className="text-sm text-slate-500 font-medium">Outstanding: {getConvertedValue(vaultData.ltv.debtUSD)}. Full repayment unlocks vault.</p>
+                            </div>
+                        )}
 
                     </div>
 

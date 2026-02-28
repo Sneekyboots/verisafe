@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "./VerisOracle.sol";
+import "./VerisOracleV2.sol";
 import "./CreditNFT.sol";
 
 /**
@@ -34,7 +34,7 @@ contract CollateralVault {
     address public factory; // VaultFactory that deployed this
     address public liquidationEngine;
 
-    VerisOracle public verisOracle;
+    VerisOracleV2 public verisOracle;
     CreditNFT public creditNFT;
 
     uint256 public depositedBNB; // in wei
@@ -78,7 +78,7 @@ contract CollateralVault {
     ) {
         owner = _owner;
         factory = _factory;
-        verisOracle = VerisOracle(payable(_verisOracle));
+        verisOracle = VerisOracleV2(payable(_verisOracle));
         creditNFT = CreditNFT(_creditNFT);
         liquidationEngine = _liquidationEngine;
     }
@@ -124,7 +124,7 @@ contract CollateralVault {
         if (depositedBNB == 0) revert InsufficientCollateral();
 
         // Get verified price from Veris oracle (free — vault is whitelisted)
-        (uint256 bnbPriceUSD,) = verisOracle.getPrice{value: 0}();
+        (uint256 bnbPriceUSD,,) = verisOracle.getPrice{value: 0}();
 
         // Calculate collateral value in USD cents
         // depositedBNB (wei) * price (8 dec) / 1e18 / 1e8 * 100 (for cents)
@@ -156,7 +156,7 @@ contract CollateralVault {
 
         // Simple repayment: accepts BNB, converts at current oracle price
         // In production this would accept USDT. For demo BNB repayment works.
-        (uint256 bnbPriceUSD,) = verisOracle.getPrice{value: 0}();
+        (uint256 bnbPriceUSD,,) = verisOracle.getPrice{value: 0}();
 
         uint256 repaidCents = (msg.value * bnbPriceUSD * 100) / (BNB_DECIMALS * PRICE_DECIMALS);
 
@@ -191,13 +191,14 @@ contract CollateralVault {
         uint256 balance = address(this).balance;
         if (balance == 0) revert ZeroAmount();
 
-        depositedBNB = 0;
-        creditActive = false;
-        locked = false;
-
+        // Revoke NFT BEFORE clearing creditActive — otherwise the check below never fires
         if (creditActive) {
             creditNFT.revoke(creditNFTId);
         }
+
+        depositedBNB = 0;
+        creditActive = false;
+        locked = false;
 
         payable(owner).transfer(balance);
         emit EmergencyWithdraw(owner, balance);
@@ -232,7 +233,7 @@ contract CollateralVault {
     function getCurrentLTV() external view returns (uint256 ltv, bool shouldLiquidate) {
         if (debtUSD == 0 || depositedBNB == 0) return (0, false);
 
-        (uint256 bnbPriceUSD,, bool fresh) = verisOracle.getPriceUnsafe();
+        (uint256 bnbPriceUSD,, bool fresh,) = verisOracle.getPriceUnsafe();
         if (!fresh) return (0, false);
 
         uint256 collateralValueCents = (depositedBNB * bnbPriceUSD * 100) / (BNB_DECIMALS * PRICE_DECIMALS);

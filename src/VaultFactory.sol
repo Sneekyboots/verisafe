@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "./CollateralVault.sol";
-import "./VerisOracle.sol";
+import "./VerisOracleV2.sol";
 import "./CreditNFT.sol";
 
 /**
@@ -85,7 +85,7 @@ contract VaultFactory {
         allVaults.push(vault);
 
         // Whitelist the new vault in VerisOracle (free price queries)
-        VerisOracle(payable(verisOracle)).addFreeCaller(vault);
+        VerisOracleV2(payable(verisOracle)).addFreeCaller(vault);
 
         // Authorize vault to mint/revoke CreditNFTs
         CreditNFT(creditNFT).authorizeVault(vault);

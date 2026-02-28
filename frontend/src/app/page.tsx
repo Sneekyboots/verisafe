@@ -7,7 +7,7 @@ import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount, useReadContract, useWriteContract } from 'wagmi';
 import VaultDashboard from "@/components/VaultDashboard";
 
-const FACTORY_ADDRESS = "0xA39F81909Be6FC0953004427791319F9B4FA914b";
+const FACTORY_ADDRESS = "0x1b7f8Dd766E3DEaCd569843a182b4A012dfa6b08";
 const FACTORY_ABI = [
   { inputs: [], name: 'deployVault', outputs: [{ type: 'address' }], stateMutability: 'nonpayable', type: 'function' },
   { inputs: [{ name: 'user', type: 'address' }], name: 'getVault', outputs: [{ type: 'address' }], stateMutability: 'view', type: 'function' }
