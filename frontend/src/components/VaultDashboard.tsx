@@ -396,30 +396,29 @@ export default function VaultDashboard({ vaultAddress }: { vaultAddress: string 
                         {/* Stake BNB Input */}
                         <div className="flex flex-col gap-3 w-full md:w-1/2">
                             <label className="font-bold text-slate-700">Stake Collateral (BNB)</label>
-                            <div className="flex gap-2">
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    placeholder="e.g. 0.1"
-                                    value={stakeAmount}
-                                    onChange={(e) => setStakeAmount(e.target.value)}
-                                    className="flex-1 w-full border-2 border-slate-800 bg-white px-4 py-2 font-bold text-lg hand-drawn-border-alt focus:outline-none focus:ring-4 focus:ring-yellow-200"
-                                />
-                                <Button
-                                    onClick={handleStake}
-                                    disabled={isStaking || isBorrowing || isWithdrawing}
-                                    className="h-auto px-6 text-lg bg-slate-800 hover:bg-slate-700 text-white font-bold hand-drawn-border shadow-[4px_4px_0px_rgba(0,0,0,0.4)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all disabled:opacity-50"
-                                >
-                                    {isStaking ? <Loader2 className="w-5 h-5 animate-spin" /> : "Stake"}
-                                </Button>
-                            </div>
+                            <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="e.g. 0.1"
+                                value={stakeAmount}
+                                onChange={(e) => setStakeAmount(e.target.value)}
+                                className="w-full border-2 border-slate-800 bg-white px-4 py-3 font-bold text-lg hand-drawn-border-alt focus:outline-none focus:ring-4 focus:ring-yellow-200"
+                            />
+                            <Button
+                                onClick={handleStake}
+                                disabled={isStaking || isBorrowing || isWithdrawing}
+                                className="w-full h-auto py-3 text-lg bg-slate-800 hover:bg-slate-700 text-white font-bold hand-drawn-border shadow-[4px_4px_0px_rgba(0,0,0,0.4)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all disabled:opacity-50"
+                            >
+                                {isStaking ? <Loader2 className="w-5 h-5 animate-spin" /> : "Stake"}
+                            </Button>
+
                             {/* Withdraw button — only when debt is 0 and vault has BNB */}
                             {(vaultData?.ltv?.debtUSD || 0) === 0 && Number(vaultData?.balanceBNB || 0) > 0 && (
                                 <Button
                                     onClick={handleWithdraw}
                                     disabled={isWithdrawing || isStaking || isBorrowing}
-                                    className="mt-2 h-auto py-2 px-4 text-sm bg-orange-500 hover:bg-orange-400 text-white font-bold hand-drawn-border shadow-[3px_3px_0px_rgba(0,0,0,0.3)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all disabled:opacity-50"
+                                    className="w-full h-auto py-2 text-sm bg-orange-500 hover:bg-orange-400 text-white font-bold hand-drawn-border shadow-[3px_3px_0px_rgba(0,0,0,0.3)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all disabled:opacity-50"
                                 >
                                     {isWithdrawing ? <Loader2 className="w-4 h-4 animate-spin" /> : `Withdraw ${vaultData.balanceBNB} BNB`}
                                 </Button>
@@ -436,7 +435,7 @@ export default function VaultDashboard({ vaultAddress }: { vaultAddress: string 
                                 placeholder="e.g. 50"
                                 value={borrowAmount}
                                 onChange={(e) => setBorrowAmount(e.target.value)}
-                                className="w-full border-2 border-slate-800 bg-white px-4 py-2 font-bold text-lg hand-drawn-border-alt focus:outline-none focus:ring-4 focus:ring-green-200"
+                                className="w-full border-2 border-slate-800 bg-white px-4 py-3 font-bold text-lg hand-drawn-border-alt focus:outline-none focus:ring-4 focus:ring-green-200"
                             />
                             <div className="flex gap-2 w-full mt-1">
                                 <Button
@@ -463,24 +462,22 @@ export default function VaultDashboard({ vaultAddress }: { vaultAddress: string 
                             </label>
                             {(vaultData?.ltv?.debtUSD || 0) > 0 ? (
                                 <>
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="number"
-                                            step="0.001"
-                                            min="0"
-                                            placeholder="e.g. 0.05"
-                                            value={repayAmount}
-                                            onChange={(e) => setRepayAmount(e.target.value)}
-                                            className="flex-1 w-full border-2 border-slate-800 bg-white px-4 py-2 font-bold text-lg hand-drawn-border-alt focus:outline-none focus:ring-4 focus:ring-rose-200"
-                                        />
-                                        <Button
-                                            onClick={handleRepay}
-                                            disabled={isRepaying || isStaking || isBorrowing}
-                                            className="h-auto px-6 text-lg bg-rose-600 hover:bg-rose-500 text-white font-bold hand-drawn-border shadow-[4px_4px_0px_rgba(0,0,0,0.4)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all disabled:opacity-50"
-                                        >
-                                            {isRepaying ? <Loader2 className="w-5 h-5 animate-spin" /> : "Repay"}
-                                        </Button>
-                                    </div>
+                                    <input
+                                        type="number"
+                                        step="0.001"
+                                        min="0"
+                                        placeholder="e.g. 0.05"
+                                        value={repayAmount}
+                                        onChange={(e) => setRepayAmount(e.target.value)}
+                                        className="w-full border-2 border-slate-800 bg-white px-4 py-3 font-bold text-lg hand-drawn-border-alt focus:outline-none focus:ring-4 focus:ring-rose-200"
+                                    />
+                                    <Button
+                                        onClick={handleRepay}
+                                        disabled={isRepaying || isStaking || isBorrowing}
+                                        className="w-full h-auto py-3 text-lg bg-rose-600 hover:bg-rose-500 text-white font-bold hand-drawn-border shadow-[4px_4px_0px_rgba(0,0,0,0.4)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all disabled:opacity-50"
+                                    >
+                                        {isRepaying ? <Loader2 className="w-5 h-5 animate-spin" /> : "Repay"}
+                                    </Button>
                                     <p className="text-sm text-slate-500 font-medium">Outstanding: {getConvertedValue(vaultData.ltv.debtUSD)}. Full repayment unlocks vault.</p>
                                 </>
                             ) : (
