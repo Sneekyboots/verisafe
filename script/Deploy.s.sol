@@ -66,6 +66,10 @@ contract DeployVerisafe is Script {
         VerisOracleV2(payable(verisOracleV2)).addFreeCaller(address(factory));
         console.log("Factory whitelisted on VerisOracleV2");
 
+        // Transfer oracle ownership to factory so deployVault() can whitelist each new vault
+        VerisOracleV2(payable(verisOracleV2)).transferOwnership(address(factory));
+        console.log("VerisOracleV2 ownership -> VaultFactory");
+
         vm.stopBroadcast();
 
         // ── Print summary ─────────────────────────────────────────────────
