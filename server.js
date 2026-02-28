@@ -22,29 +22,29 @@
 
 require("dotenv").config();
 
-const express    = require("express");
-const cors       = require("cors");
+const express = require("express");
+const cors = require("cors");
 const { ethers } = require("ethers");
-const path       = require("path");
-const fs         = require("fs");
+const path = require("path");
+const fs = require("fs");
 
-const { fetchAggregatedPrice }       = require("./oracle/price-fetcher");
-const { generateProof, verifyProof } = require("./zk/groth16-prover");
-const { listProofs }                 = require("./greenfield/client");
+const { fetchAggregatedPrice } = require("./backend/oracle/price-fetcher");
+const { generateProof, verifyProof } = require("./backend/zk/groth16-prover");
+const { listProofs } = require("./backend/greenfield/client");
 
 // ── Config ────────────────────────────────────────────────────────────────
 
-const PORT           = process.env.PORT           || 3001;
-const ORACLE_V1      = process.env.VERIS_ORACLE;
-const ORACLE_V2      = process.env.VERIS_ORACLE_V2;
-const VAULT_FACTORY  = process.env.VAULT_FACTORY;
-const CREDIT_NFT     = process.env.CREDIT_NFT;
-const LIQUIDATION    = process.env.LIQUIDATION_ENGINE;
-const PK             = process.env.PRIVATE_KEY;
-const ADMIN_KEY      = process.env.ADMIN_API_KEY  || "verisafe-demo-2024";
+const PORT = process.env.PORT || 3001;
+const ORACLE_V1 = process.env.VERIS_ORACLE;
+const ORACLE_V2 = process.env.VERIS_ORACLE_V2;
+const VAULT_FACTORY = process.env.VAULT_FACTORY;
+const CREDIT_NFT = process.env.CREDIT_NFT;
+const LIQUIDATION = process.env.LIQUIDATION_ENGINE;
+const PK = process.env.PRIVATE_KEY;
+const ADMIN_KEY = process.env.ADMIN_API_KEY || "verisafe-demo-2024";
 
 const RPC_LIST = [
-    process.env.BSC_TESTNET_RPC             || "https://data-seed-prebsc-1-s1.binance.org:8545",
+    process.env.BSC_TESTNET_RPC || "https://data-seed-prebsc-1-s1.binance.org:8545",
     "https://data-seed-prebsc-2-s1.binance.org:8545",
     "https://data-seed-prebsc-1-s2.binance.org:8545",
     "https://bsc-testnet.drpc.org",
@@ -54,7 +54,7 @@ const RPC_LIST = [
 
 const ORACLE_V2_ABI = [
     "function latestPrice() external view returns (uint256 price, uint256 timestamp, bytes32 commitment, bool verified, bool zkVerified)",
-    "function getPriceUnsafe() external view returns (uint256 price, uint256 timestamp, bool fresh, bool zkVerified, uint256 agentsAgreed)",
+    "function getPriceUnsafe() external view returns (uint256 price, uint256 timestamp, bool fresh)",
     "function getHistoryLength() external view returns (uint256)",
     "function priceHistory(uint256 i) external view returns (uint256 price, uint256 timestamp, bytes32 commitment, bytes32 greenfieldObjectId)",
     "function authorizedSubmitter() external view returns (address)",
@@ -73,13 +73,16 @@ const FACTORY_ABI = [
 
 const VAULT_ABI = [
     "function owner() external view returns (address)",
-    "function collateralBalance() external view returns (uint256)",
+    "function depositedBNB() external view returns (uint256)",
     "function creditNFTId() external view returns (uint256)",
-    "function getLTV() external view returns (uint256 ltv, uint256 collateralUSD, uint256 debtUSD)",
-    "function isLiquidatable() external view returns (bool)",
-    "function status() external view returns (uint8)",
+    "function creditActive() external view returns (bool)",
+    "function locked() external view returns (bool)",
+    "function getVaultInfo() external view returns (uint256 _depositedBNB, uint256 _creditLineUSD, uint256 _debtUSD, bool _creditActive, bool _locked, uint256 _nftId)",
+    "function getCurrentLTV() external view returns (uint256 ltv, bool shouldLiquidate)",
     "function deposit() external payable",
-    "function requestCredit() external returns (uint256 tokenId)",
+    "function requestCredit(uint256 requestedUSD) external",
+    "function isLiquidatable() external view returns (bool)",
+    "function status() external view returns (uint8)"
 ];
 
 const CREDIT_NFT_ABI = [
@@ -143,19 +146,19 @@ function requireAdmin(req, res, next) {
 
 app.get("/health", async (req, res) => {
     try {
-        const provider   = await getProvider();
-        const block      = await provider.getBlockNumber();
-        const network    = await provider.getNetwork();
+        const provider = await getProvider();
+        const block = await provider.getBlockNumber();
+        const network = await provider.getNetwork();
 
         let oracleStatus = null;
         try {
-            const oracle  = new ethers.Contract(ORACLE_V2, ORACLE_V2_ABI, provider);
-            const latest  = await oracle.getPriceUnsafe();
-            const age     = Math.floor(Date.now() / 1000) - Number(latest.timestamp);
-            oracleStatus  = {
-                price:      "$" + (Number(latest.price) / 1e8).toFixed(2),
-                fresh:      latest.fresh,
-                age:        age + "s",
+            const oracle = new ethers.Contract(ORACLE_V2, ORACLE_V2_ABI, provider);
+            const latest = await oracle.getPriceUnsafe();
+            const age = Math.floor(Date.now() / 1000) - Number(latest.timestamp);
+            oracleStatus = {
+                price: "$" + (Number(latest.price) / 1e8).toFixed(2),
+                fresh: latest.fresh,
+                age: age + "s",
                 zkVerified: latest.zkVerified,
             };
         } catch (e) {
@@ -166,15 +169,15 @@ app.get("/health", async (req, res) => {
         const zkeyOk = fs.existsSync(path.join(__dirname, "../circuits/build/price_commitment_final.zkey"));
 
         res.json({
-            status:   "ok",
-            chain:    { id: Number(network.chainId), block },
-            oracle:   oracleStatus,
+            status: "ok",
+            chain: { id: Number(network.chainId), block },
+            oracle: oracleStatus,
             circuits: { wasm: wasmOk, zkey: zkeyOk },
             contracts: {
-                oracleV1:          ORACLE_V1,
-                oracleV2:          ORACLE_V2,
-                vaultFactory:      VAULT_FACTORY,
-                creditNFT:         CREDIT_NFT,
+                oracleV1: ORACLE_V1,
+                oracleV2: ORACLE_V2,
+                vaultFactory: VAULT_FACTORY,
+                creditNFT: CREDIT_NFT,
                 liquidationEngine: LIQUIDATION,
             },
             ts: new Date().toISOString(),
@@ -189,19 +192,19 @@ app.get("/health", async (req, res) => {
 app.get("/oracle/price", async (req, res) => {
     try {
         const provider = await getProvider();
-        const oracle   = new ethers.Contract(ORACLE_V2, ORACLE_V2_ABI, provider);
+        const oracle = new ethers.Contract(ORACLE_V2, ORACLE_V2_ABI, provider);
         const [p, ts, commitment, verified, zkVerified] = await oracle.latestPrice();
 
         res.json({
-            price:      Number(p) / 1e8,
-            priceRaw:   p.toString(),
-            priceUSD:   "$" + (Number(p) / 1e8).toFixed(2),
-            timestamp:  Number(ts),
-            age:        Math.floor(Date.now() / 1000) - Number(ts),
+            price: Number(p) / 1e8,
+            priceRaw: p.toString(),
+            priceUSD: "$" + (Number(p) / 1e8).toFixed(2),
+            timestamp: Number(ts),
+            age: Math.floor(Date.now() / 1000) - Number(ts),
             commitment,
             verified,
             zkVerified,
-            explorer:   `https://testnet.bscscan.com/address/${ORACLE_V2}`,
+            explorer: `https://testnet.bscscan.com/address/${ORACLE_V2}`,
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -213,21 +216,21 @@ app.get("/oracle/price", async (req, res) => {
 app.get("/oracle/history", async (req, res) => {
     try {
         const provider = await getProvider();
-        const oracle   = new ethers.Contract(ORACLE_V2, ORACLE_V2_ABI, provider);
-        const len      = Number(await oracle.getHistoryLength());
-        const limit    = Math.min(parseInt(req.query.limit || "20"), 50);
-        const start    = Math.max(0, len - limit);
+        const oracle = new ethers.Contract(ORACLE_V2, ORACLE_V2_ABI, provider);
+        const len = Number(await oracle.getHistoryLength());
+        const limit = Math.min(parseInt(req.query.limit || "20"), 50);
+        const start = Math.max(0, len - limit);
 
         const entries = [];
         for (let i = len - 1; i >= start; i--) {
             try {
                 const h = await oracle.priceHistory(i);
                 entries.push({
-                    index:        i,
-                    price:        Number(h.price) / 1e8,
-                    priceUSD:     "$" + (Number(h.price) / 1e8).toFixed(2),
-                    timestamp:    Number(h.timestamp),
-                    commitment:   h.commitment,
+                    index: i,
+                    price: Number(h.price) / 1e8,
+                    priceUSD: "$" + (Number(h.price) / 1e8).toFixed(2),
+                    timestamp: Number(h.timestamp),
+                    commitment: h.commitment,
                     greenfieldRef: h.greenfieldObjectId,
                 });
             } catch { break; }
@@ -249,9 +252,9 @@ app.post("/oracle/submit", requireAdmin, async (req, res) => {
         const args = ["backend/oracle/agent.js"];
         if (override) args.push("--price", String(override));
 
-        const child  = spawn("node", args, {
-            cwd:   path.join(__dirname, ".."),
-            env:   process.env,
+        const child = spawn("node", args, {
+            cwd: path.join(__dirname, ".."),
+            env: process.env,
             stdio: "pipe",
         });
 
@@ -281,33 +284,49 @@ app.get("/vault/:address", async (req, res) => {
         if (!ethers.isAddress(vaultAddr)) return res.status(400).json({ error: "Invalid address" });
 
         const provider = await getProvider();
-        const vault    = new ethers.Contract(vaultAddr, VAULT_ABI, provider);
+        const vault = new ethers.Contract(vaultAddr, VAULT_ABI, provider);
+        const oracle = new ethers.Contract(ORACLE_V2, ORACLE_V2_ABI, provider);
 
-        const [owner, balance, nftId, ltvData, liquidatable, status] = await Promise.all([
-            vault.owner(),
-            vault.collateralBalance(),
-            vault.creditNFTId().catch(() => null),
-            vault.getLTV().catch(() => null),
-            vault.isLiquidatable().catch(() => false),
-            vault.status().catch(() => null),
+        const [owner, vaultInfo, ltvData, priceData] = await Promise.all([
+            vault.owner().catch(() => null),
+            vault.getVaultInfo().catch(() => null),
+            vault.getCurrentLTV().catch(() => null),
+            oracle.getPriceUnsafe().catch(() => null)
         ]);
 
-        const statuses = ["EMPTY", "ACTIVE", "DEFAULTED", "LIQUIDATED"];
+        const balance = vaultInfo ? vaultInfo[0] : 0n;
+        const creditLineUSD = vaultInfo ? Number(vaultInfo[1]) / 100 : 0;
+        const debtUSD = vaultInfo ? Number(vaultInfo[2]) / 100 : 0;
+        const creditActive = vaultInfo ? vaultInfo[3] : false;
+        const locked = vaultInfo ? vaultInfo[4] : false;
+        const nftId = vaultInfo && Number(vaultInfo[5]) > 0 ? Number(vaultInfo[5]) : null;
+
+        const bnbPriceUSD = priceData ? Number(priceData.price) / 1e8 : 0;
+        const collateralUSD = (Number(ethers.formatEther(balance)) * bnbPriceUSD);
+
+        let isLiquidatable = false;
+        let ltvValue = 0;
+        if (ltvData) {
+            ltvValue = Number(ltvData[0]);
+            isLiquidatable = ltvData[1];
+        }
+
+        const status = locked ? "ACTIVE DEBT" : (balance > 0n ? "FUNDED" : "EMPTY");
 
         res.json({
-            address:      vaultAddr,
+            address: vaultAddr,
             owner,
-            balance:      ethers.formatEther(balance),
-            balanceBNB:   parseFloat(ethers.formatEther(balance)).toFixed(4),
-            creditNFTId:  nftId ? Number(nftId) : null,
-            ltv:          ltvData ? {
-                ltv:          Number(ltvData.ltv),
-                collateralUSD: Number(ltvData.collateralUSD) / 1e8,
-                debtUSD:       Number(ltvData.debtUSD) / 1e8,
-            } : null,
-            isLiquidatable: liquidatable,
-            status:        status !== null ? (statuses[Number(status)] || Number(status)) : null,
-            explorer:      `https://testnet.bscscan.com/address/${vaultAddr}`,
+            balance: ethers.formatEther(balance),
+            balanceBNB: parseFloat(ethers.formatEther(balance)).toFixed(4),
+            creditNFTId: nftId,
+            ltv: {
+                ltv: ltvValue,
+                collateralUSD: collateralUSD,
+                debtUSD: debtUSD,
+            },
+            isLiquidatable: isLiquidatable,
+            status: status,
+            explorer: `https://testnet.bscscan.com/address/${vaultAddr}`,
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -322,8 +341,8 @@ app.post("/vault/deploy", async (req, res) => {
         if (!ethers.isAddress(userAddress)) return res.status(400).json({ error: "Invalid address" });
 
         const provider = await getProvider();
-        const signer   = getSigner(provider);
-        const factory  = new ethers.Contract(VAULT_FACTORY, FACTORY_ABI, signer);
+        const signer = getSigner(provider);
+        const factory = new ethers.Contract(VAULT_FACTORY, FACTORY_ABI, signer);
 
         // Check if vault already exists
         const existing = await factory.getVault(userAddress);
@@ -335,15 +354,15 @@ app.post("/vault/deploy", async (req, res) => {
             // fallback: deploy on behalf from server signer
             factory.deployVault()
         );
-        const receipt  = await tx.wait();
-        const event    = receipt.logs.find(l => l.fragment?.name === "VaultDeployed");
-        const vault    = event?.args?.vault || await factory.getVault(userAddress);
+        const receipt = await tx.wait();
+        const event = receipt.logs.find(l => l.fragment?.name === "VaultDeployed");
+        const vault = event?.args?.vault || await factory.getVault(userAddress);
 
         res.json({
-            vaultAddress:  vault,
-            txHash:        tx.hash,
-            blockNumber:   receipt.blockNumber,
-            explorer:      `https://testnet.bscscan.com/tx/${tx.hash}`,
+            vaultAddress: vault,
+            txHash: tx.hash,
+            blockNumber: receipt.blockNumber,
+            explorer: `https://testnet.bscscan.com/tx/${tx.hash}`,
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -356,7 +375,7 @@ app.get("/credit/:tokenId", async (req, res) => {
     try {
         const tokenId = parseInt(req.params.tokenId);
         const provider = await getProvider();
-        const nft      = new ethers.Contract(CREDIT_NFT, CREDIT_NFT_ABI, provider);
+        const nft = new ethers.Contract(CREDIT_NFT, CREDIT_NFT_ABI, provider);
 
         const [owner, limit, used, active, vault] = await Promise.all([
             nft.ownerOf(tokenId),
@@ -370,11 +389,11 @@ app.get("/credit/:tokenId", async (req, res) => {
             tokenId,
             owner,
             vault,
-            creditLimit:  Number(limit) / 1e6, // assuming USDC-style 6 decimals
-            usedCredit:   Number(used)  / 1e6,
-            available:    (Number(limit) - Number(used)) / 1e6,
-            isActive:     active,
-            utilization:  limit > 0 ? ((Number(used) / Number(limit)) * 100).toFixed(1) + "%" : "0%",
+            creditLimit: Number(limit) / 1e6, // assuming USDC-style 6 decimals
+            usedCredit: Number(used) / 1e6,
+            available: (Number(limit) - Number(used)) / 1e6,
+            isActive: active,
+            utilization: limit > 0 ? ((Number(used) / Number(limit)) * 100).toFixed(1) + "%" : "0%",
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -389,24 +408,28 @@ app.post("/liquidate/check", async (req, res) => {
         if (!ethers.isAddress(vaultAddress)) return res.status(400).json({ error: "Invalid address" });
 
         const provider = await getProvider();
-        const vault    = new ethers.Contract(vaultAddress, VAULT_ABI, provider);
-        const oracle   = new ethers.Contract(ORACLE_V2, ORACLE_V2_ABI, provider);
+        const vault = new ethers.Contract(vaultAddress, VAULT_ABI, provider);
+        const oracle = new ethers.Contract(ORACLE_V2, ORACLE_V2_ABI, provider);
 
-        const [liquidatable, ltvData, priceData] = await Promise.all([
-            vault.isLiquidatable().catch(() => null),
-            vault.getLTV().catch(() => null),
+        const [ltvData, priceData] = await Promise.all([
+            vault.getCurrentLTV().catch(() => null),
             oracle.getPriceUnsafe(),
         ]);
 
-        const ltv = ltvData ? Number(ltvData.ltv) / 100 : null;
+        let ltvValue = 0;
+        let isLiquidatable = false;
+        if (ltvData) {
+            ltvValue = Number(ltvData[0]);
+            isLiquidatable = ltvData[1];
+        }
 
         res.json({
             vaultAddress,
-            isLiquidatable: liquidatable,
-            ltv:           ltv ? ltv.toFixed(2) + "%" : null,
-            currentPrice:  "$" + (Number(priceData.price) / 1e8).toFixed(2),
-            zkVerified:    priceData.zkVerified,
-            recommendation: liquidatable
+            isLiquidatable: isLiquidatable,
+            ltv: ltvValue ? ltvValue.toFixed(2) + "%" : "0%",
+            currentPrice: "$" + (Number(priceData.price) / 1e8).toFixed(2),
+            zkVerified: priceData.zkVerified,
+            recommendation: isLiquidatable
                 ? "⚠️  Vault is at risk — liquidation threshold breached"
                 : "✅  Vault is healthy",
         });
@@ -423,8 +446,8 @@ app.post("/liquidate/simulate", requireAdmin, async (req, res) => {
         // Submit crash price through oracle agent
         const { spawn } = require("child_process");
         const child = spawn("node", ["backend/oracle/agent.js", "--price", String(crashPrice)], {
-            cwd:   path.join(__dirname, ".."),
-            env:   process.env,
+            cwd: path.join(__dirname, ".."),
+            env: process.env,
             stdio: "pipe",
         });
 
@@ -434,9 +457,9 @@ app.post("/liquidate/simulate", requireAdmin, async (req, res) => {
 
         child.on("close", code => {
             res.json({
-                success:    code === 0,
+                success: code === 0,
                 crashPrice: "$" + crashPrice,
-                note:       "If any vault has LTV > 85% at this price, LiquidationEngine can execute",
+                note: "If any vault has LTV > 85% at this price, LiquidationEngine can execute",
                 output,
             });
         });
@@ -449,7 +472,7 @@ app.post("/liquidate/simulate", requireAdmin, async (req, res) => {
 
 app.get("/greenfield/proofs", async (req, res) => {
     try {
-        const limit  = parseInt(req.query.limit || "20");
+        const limit = parseInt(req.query.limit || "20");
         const proofs = await listProofs(limit);
         res.json({ count: proofs.length, proofs });
     } catch (e) {
@@ -476,7 +499,7 @@ app.get("/greenfield/proof/:name", async (req, res) => {
 // ── /zk/status ────────────────────────────────────────────────────────────
 
 app.get("/zk/status", async (req, res) => {
-    const base     = path.join(__dirname, "../circuits/build");
+    const base = path.join(__dirname, "../circuits/build");
     const wasmPath = path.join(base, "price_commitment_js/price_commitment.wasm");
     const zkeyPath = path.join(base, "price_commitment_final.zkey");
     const vkeyPath = path.join(base, "verification_key.json");
@@ -491,16 +514,16 @@ app.get("/zk/status", async (req, res) => {
     }
 
     res.json({
-        ready:     wasmOk && zkeyOk && vkeyOk,
-        circuit:   "price_commitment.circom",
-        protocol:  "groth16",
-        curve:     "bn128",
-        hashFunc:  "poseidon(3)",
+        ready: wasmOk && zkeyOk && vkeyOk,
+        circuit: "price_commitment.circom",
+        protocol: "groth16",
+        curve: "bn128",
+        hashFunc: "poseidon(3)",
         constraints: 261,
         files: {
-            wasm:        wasmOk,
-            zkey:        zkeyOk,
-            vkey:        vkeyOk,
+            wasm: wasmOk,
+            zkey: zkeyOk,
+            vkey: vkeyOk,
             verifierContract: process.env.GROTH16_VERIFIER,
         },
         vkeyAlpha1: vkey?.vk_alpha_1?.[0]?.slice(0, 16) + "..." || null,
@@ -512,9 +535,9 @@ app.get("/zk/status", async (req, res) => {
 
 app.get("/protocol/stats", async (req, res) => {
     try {
-        const provider  = await getProvider();
-        const factory   = new ethers.Contract(VAULT_FACTORY, FACTORY_ABI, provider);
-        const oracle    = new ethers.Contract(ORACLE_V2, ORACLE_V2_ABI, provider);
+        const provider = await getProvider();
+        const factory = new ethers.Contract(VAULT_FACTORY, FACTORY_ABI, provider);
+        const oracle = new ethers.Contract(ORACLE_V2, ORACLE_V2_ABI, provider);
 
         const [totalVaults, histLen, priceData] = await Promise.all([
             factory.totalVaults().catch(() => 0n),
@@ -523,22 +546,22 @@ app.get("/protocol/stats", async (req, res) => {
         ]);
 
         // Count local greenfield proofs
-        const gfDir    = path.join(__dirname, "greenfield-proofs");
+        const gfDir = path.join(__dirname, "greenfield-proofs");
         const proofCount = fs.existsSync(gfDir)
             ? fs.readdirSync(gfDir).filter(f => f.endsWith(".json")).length
             : 0;
 
         res.json({
-            totalVaults:     Number(totalVaults),
+            totalVaults: Number(totalVaults),
             priceSubmissions: Number(histLen),
-            proofsAnchored:  proofCount,
-            currentPrice:    priceData ? "$" + (Number(priceData.price) / 1e8).toFixed(2) : null,
-            zkVerified:      priceData?.zkVerified || false,
+            proofsAnchored: proofCount,
+            currentPrice: priceData ? "$" + (Number(priceData.price) / 1e8).toFixed(2) : null,
+            zkVerified: priceData?.zkVerified || false,
             contracts: {
-                oracleV2:          ORACLE_V2,
-                groth16Verifier:   process.env.GROTH16_VERIFIER,
-                vaultFactory:      VAULT_FACTORY,
-                creditNFT:         CREDIT_NFT,
+                oracleV2: ORACLE_V2,
+                groth16Verifier: process.env.GROTH16_VERIFIER,
+                vaultFactory: VAULT_FACTORY,
+                creditNFT: CREDIT_NFT,
                 liquidationEngine: LIQUIDATION,
             },
             network: "BSC Testnet (Chain 97)",
@@ -553,8 +576,8 @@ app.get("/protocol/stats", async (req, res) => {
 app.get("/demo", async (req, res) => {
     try {
         const provider = await getProvider();
-        const oracle   = new ethers.Contract(ORACLE_V2, ORACLE_V2_ABI, provider);
-        const factory  = new ethers.Contract(VAULT_FACTORY, FACTORY_ABI, provider);
+        const oracle = new ethers.Contract(ORACLE_V2, ORACLE_V2_ABI, provider);
+        const factory = new ethers.Contract(VAULT_FACTORY, FACTORY_ABI, provider);
 
         const [priceData, totalVaults, histLen] = await Promise.all([
             oracle.getPriceUnsafe().catch(() => null),
@@ -562,48 +585,48 @@ app.get("/demo", async (req, res) => {
             oracle.getHistoryLength().catch(() => 0n),
         ]);
 
-        const price    = priceData ? Number(priceData.price) / 1e8 : 614.98;
+        const price = priceData ? Number(priceData.price) / 1e8 : 614.98;
         const collateral = 0.5;
-        const ltv      = 0.70;
-        const credit   = collateral * price * ltv;
+        const ltv = 0.70;
+        const credit = collateral * price * ltv;
 
         res.json({
             title: "Verisafe Protocol Demo",
             oracle: {
-                price:      "$" + price.toFixed(2),
+                price: "$" + price.toFixed(2),
                 zkVerified: priceData?.zkVerified ?? false,
-                protocol:   "Groth16 BN128",
-                circuit:    "Poseidon(3) — 261 constraints",
-                verifier:   process.env.GROTH16_VERIFIER,
+                protocol: "Groth16 BN128",
+                circuit: "Poseidon(3) — 261 constraints",
+                verifier: process.env.GROTH16_VERIFIER,
             },
             exampleVault: {
-                deposit:    "0.5 BNB",
-                valueUSD:   "$" + (collateral * price).toFixed(2),
-                ltv:        "70%",
+                deposit: "0.5 BNB",
+                valueUSD: "$" + (collateral * price).toFixed(2),
+                ltv: "70%",
                 creditLine: "$" + credit.toFixed(2),
-                note:       "BNB stays in YOUR contract — Verisafe never holds it",
+                note: "BNB stays in YOUR contract — Verisafe never holds it",
             },
             liquidationTrigger: {
-                threshold:  "85% LTV",
+                threshold: "85% LTV",
                 crashPrice: "$" + ((credit / 0.85 / collateral).toFixed(2)),
-                note:       "If BNB drops below this price, auto-liquidation executes",
+                note: "If BNB drops below this price, auto-liquidation executes",
             },
             protocol: {
-                totalVaults:      Number(totalVaults),
+                totalVaults: Number(totalVaults),
                 priceSubmissions: Number(histLen),
-                network:          "BSC Testnet",
+                network: "BSC Testnet",
             },
             contracts: {
-                oracleV1:         ORACLE_V1,
-                oracleV2:         ORACLE_V2,
-                groth16Verifier:  process.env.GROTH16_VERIFIER,
-                vaultFactory:     VAULT_FACTORY,
-                creditNFT:        CREDIT_NFT,
-                liquidation:      LIQUIDATION,
+                oracleV1: ORACLE_V1,
+                oracleV2: ORACLE_V2,
+                groth16Verifier: process.env.GROTH16_VERIFIER,
+                vaultFactory: VAULT_FACTORY,
+                creditNFT: CREDIT_NFT,
+                liquidation: LIQUIDATION,
             },
             explorers: {
-                oracleV2:   `https://testnet.bscscan.com/address/${ORACLE_V2}`,
-                factory:    `https://testnet.bscscan.com/address/${VAULT_FACTORY}`,
+                oracleV2: `https://testnet.bscscan.com/address/${ORACLE_V2}`,
+                factory: `https://testnet.bscscan.com/address/${VAULT_FACTORY}`,
             },
         });
     } catch (e) {

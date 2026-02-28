@@ -4,16 +4,93 @@ import { Button } from "@/components/ui/button";
 import { ArrowRight, Layers, ShieldCheck, Zap, Wallet, PenTool, Eraser } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { useAccount } from 'wagmi';
+import { useAccount, useReadContract, useWriteContract } from 'wagmi';
+import VaultDashboard from "@/components/VaultDashboard";
+
+const FACTORY_ADDRESS = "0xA39F81909Be6FC0953004427791319F9B4FA914b";
+const FACTORY_ABI = [
+  { inputs: [], name: 'deployVault', outputs: [{ type: 'address' }], stateMutability: 'nonpayable', type: 'function' },
+  { inputs: [{ name: 'user', type: 'address' }], name: 'getVault', outputs: [{ type: 'address' }], stateMutability: 'view', type: 'function' }
+];
+
+function AnimatingDots() {
+  const [dots, setDots] = useState("");
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDots((prev) => (prev.length >= 3 ? "" : prev + "."));
+    }, 500);
+    return () => clearInterval(interval);
+  }, []);
+  return <span className="inline-block w-8 text-left">{dots}</span>;
+}
+
+// VaultDashboard component is now imported from @/components/VaultDashboard
 
 function HomeContent() {
   const dotsRef = useRef<HTMLDivElement>(null);
-  const { isConnected } = useAccount();
+  const { isConnected, address } = useAccount();
   const [mounted, setMounted] = useState(false);
+  const [vaultStatus, setVaultStatus] = useState<"idle" | "deploying" | "success" | "completed" | "error">("idle");
+  const [vaultAddress, setVaultAddress] = useState<string | null>(null);
+  const [isExistingVault, setIsExistingVault] = useState(false);
+
+  const { data: existingVault, isLoading: isVaultLoading, refetch: refetchVault } = useReadContract({
+    address: FACTORY_ADDRESS,
+    abi: FACTORY_ABI,
+    functionName: 'getVault',
+    args: address ? [address] : undefined,
+    query: { enabled: !!address },
+  });
+
+  const { writeContractAsync } = useWriteContract();
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (isConnected && address && vaultStatus === "idle" && !isVaultLoading) {
+      setVaultStatus("deploying");
+
+      setTimeout(async () => {
+        try {
+          // Check if vault already exists (via read contract hook result)
+          if (existingVault && existingVault !== "0x0000000000000000000000000000000000000000") {
+            setVaultAddress(existingVault as string);
+            setIsExistingVault(true);
+            setVaultStatus("success");
+            setTimeout(() => setVaultStatus("completed"), 2000);
+            return;
+          }
+
+          // Trigger wallet pop-up for actual on-chain transaction
+          const hash = await writeContractAsync({
+            address: FACTORY_ADDRESS,
+            abi: FACTORY_ABI,
+            functionName: 'deployVault',
+          });
+
+          console.log("Vault deployed, tx: ", hash);
+
+          // Wait until a vault has been deployed by polling the view function
+          let updatedVault = existingVault;
+          while (!updatedVault || updatedVault === "0x0000000000000000000000000000000000000000") {
+            await new Promise(r => setTimeout(r, 2000));
+            const result = await refetchVault();
+            updatedVault = result.data;
+          }
+
+          setVaultAddress(updatedVault as string);
+          setVaultStatus("success");
+          setTimeout(() => setVaultStatus("completed"), 2000);
+
+        } catch (err) {
+          console.error("Failed to deploy vault via wagmi:", err);
+          setVaultStatus("error");
+        }
+      }, 1500);
+    }
+  }, [isConnected, address, vaultStatus, existingVault, isVaultLoading, writeContractAsync, refetchVault]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -69,13 +146,58 @@ function HomeContent() {
         <main className="flex-1 flex flex-col items-center justify-center pt-16 pb-24 h-full relative">
 
           {mounted && isConnected ? (
-            <div className="flex-1 flex items-center justify-center w-full h-full">
-              <div className="text-6xl md:text-8xl font-black text-slate-800 rotate-[-2deg] hand-drawn-border p-16 bg-white shadow-[12px_12px_0px_rgba(0,0,0,1)] relative animate-in zoom-in spin-in-2 duration-500">
-                Hello World!
-                <div className="absolute -top-6 -right-6 text-rose-500 opacity-60 transform rotate-12">
-                  <Eraser className="w-12 h-12" />
+            <div className="flex-1 flex items-center justify-center w-full h-full px-4">
+              {vaultStatus === "completed" && vaultAddress ? (
+                <VaultDashboard vaultAddress={vaultAddress} />
+              ) : (
+                <div className="flex flex-col items-center justify-center p-12 md:p-16 bg-white hand-drawn-border shadow-[12px_12px_0px_rgba(0,0,0,1)] relative rotate-[-1deg] animate-in zoom-in spin-in-2 duration-500 max-w-2xl w-full text-center">
+
+                  {vaultStatus === "deploying" && (
+                    <>
+                      <ShieldCheck className="w-24 h-24 text-slate-800 mb-8 animate-pulse" strokeWidth={1.5} />
+                      <h2 className="text-4xl md:text-5xl font-black text-slate-800 tracking-tight flex items-center justify-center min-w-[300px]">
+                        {existingVault && existingVault !== "0x0000000000000000000000000000000000000000" && !isVaultLoading ? "Loading Vault Data" : "Artifacting your vault"}
+                        <AnimatingDots />
+                      </h2>
+                      <p className="mt-6 text-slate-500 font-bold text-xl md:text-2xl">
+                        {existingVault && existingVault !== "0x0000000000000000000000000000000000000000" && !isVaultLoading ? "Retrieving collateral architecture..." : "Securing your collateral architecture..."}
+                      </p>
+                    </>
+                  )}
+
+                  {vaultStatus === "success" && (
+                    <>
+                      <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mb-8 border-4 border-slate-800 hand-drawn-border">
+                        <ShieldCheck className="w-12 h-12 text-green-600" strokeWidth={2.5} />
+                      </div>
+                      <h2 className="text-4xl md:text-5xl font-black text-slate-800 tracking-tight">
+                        {isExistingVault ? "Vault Loaded!!" : "Artifacting Successful!!"}
+                      </h2>
+                    </>
+                  )}
+
+                  {vaultStatus === "error" && (
+                    <>
+                      <div className="w-24 h-24 bg-red-100 rounded-full flex items-center justify-center mb-8 border-4 border-slate-800 hand-drawn-border">
+                        <Eraser className="w-12 h-12 text-red-600" strokeWidth={2.5} />
+                      </div>
+                      <h2 className="text-4xl md:text-5xl font-black text-slate-800 tracking-tight">
+                        Deployment Failed
+                      </h2>
+                      <p className="mt-4 text-slate-600 font-bold text-xl">
+                        Failed to artifact your vault. Please try again.
+                      </p>
+                      <Button
+                        onClick={() => setVaultStatus("idle")}
+                        className="mt-10 h-16 px-10 text-2xl bg-slate-800 hover:bg-slate-700 text-white hand-drawn-border shadow-[6px_6px_0px_rgba(30,41,59,0.3)] hover:shadow-[2px_2px_0px_rgba(30,41,59,0.3)] hover:translate-x-1 hover:translate-y-1 transition-all font-bold"
+                      >
+                        Retry
+                      </Button>
+                    </>
+                  )}
+
                 </div>
-              </div>
+              )}
             </div>
           ) : (
             <>
