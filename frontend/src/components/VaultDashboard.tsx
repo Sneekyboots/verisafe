@@ -7,7 +7,8 @@ import { parseEther } from 'viem';
 const VAULT_ABI = [
     { inputs: [], name: 'deposit', outputs: [], stateMutability: 'payable', type: 'function' },
     { inputs: [{ name: 'requestedUSD', type: 'uint256' }], name: 'requestCredit', outputs: [], stateMutability: 'nonpayable', type: 'function' },
-    { inputs: [], name: 'repay', outputs: [], stateMutability: 'payable', type: 'function' }
+    { inputs: [], name: 'repay', outputs: [], stateMutability: 'payable', type: 'function' },
+    { inputs: [], name: 'emergencyWithdraw', outputs: [], stateMutability: 'nonpayable', type: 'function' }
 ] as const;
 
 const MOCK_ERC20_ABI = [
@@ -40,6 +41,7 @@ export default function VaultDashboard({ vaultAddress }: { vaultAddress: string 
     // Repay State
     const [repayAmount, setRepayAmount] = useState<string>("");
     const [isRepaying, setIsRepaying] = useState(false);
+    const [isWithdrawing, setIsWithdrawing] = useState(false);
 
     const [statusMsg, setStatusMsg] = useState<string>("");
 
@@ -209,6 +211,32 @@ export default function VaultDashboard({ vaultAddress }: { vaultAddress: string 
             setIsRepaying(false);
         }
     };
+
+    const handleWithdraw = async () => {
+        try {
+            setIsWithdrawing(true);
+            setStatusMsg("Withdrawing all BNB from vault — confirm in wallet...");
+
+            const hash = await writeContractAsync({
+                address: vaultAddress as `0x${string}`,
+                abi: VAULT_ABI,
+                functionName: 'emergencyWithdraw',
+            });
+
+            setStatusMsg("Transaction sent, awaiting confirmation...");
+            if (publicClient) await publicClient.waitForTransactionReceipt({ hash });
+
+            setStatusMsg("Withdrawal complete! BNB returned to your wallet.");
+            setTimeout(() => fetchVault(), 2000);
+            setTimeout(() => setStatusMsg(""), 5000);
+        } catch (err: any) {
+            console.error(err);
+            setStatusMsg("Withdraw failed: " + (err.shortMessage || err.message || "Unknown error"));
+        } finally {
+            setIsWithdrawing(false);
+        }
+    };
+
     const addTokenToWallet = async (currency: "USDT" | "vBNB") => {
         try {
             const tokenAddress = currency === "USDT" ? MOCK_USDT : MOCK_VBNB;
@@ -293,7 +321,7 @@ export default function VaultDashboard({ vaultAddress }: { vaultAddress: string 
                     </Button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
                     {/* Staked Balance */}
                     <div className="bg-amber-100 p-6 border-2 border-slate-800 hand-drawn-border shadow-[5px_5px_0px_rgba(0,0,0,0.8)] flex flex-col relative rotate-[-1deg] hover:rotate-[-2deg] transition-all">
                         <span className="text-slate-600 font-bold text-lg mb-2 flex items-center gap-2">
@@ -308,7 +336,7 @@ export default function VaultDashboard({ vaultAddress }: { vaultAddress: string 
                     {/* LTV & Health */}
                     <div className="bg-sky-100 p-6 border-2 border-slate-800 hand-drawn-border-alt shadow-[5px_5px_0px_rgba(0,0,0,0.8)] flex flex-col relative rotate-[1deg] hover:rotate-[2deg] transition-all">
                         <span className="text-slate-600 font-bold text-lg mb-2 flex items-center gap-2">
-                            <Activity className="w-5 h-5 text-slate-800" /> Max Available Line (70%)
+                            <Activity className="w-5 h-5 text-slate-800" /> Max Credit Line (70%)
                         </span>
                         <span className="text-4xl font-black text-slate-800 scribble-underline">
                             {getConvertedValue(maxBorrowUSD)}
@@ -322,6 +350,16 @@ export default function VaultDashboard({ vaultAddress }: { vaultAddress: string 
                         </span>
                         <span className="text-3xl font-black text-slate-800">
                             {getConvertedValue(vaultData.ltv?.debtUSD || 0)}
+                        </span>
+                    </div>
+
+                    {/* Remaining Credit */}
+                    <div className="bg-green-100 p-6 border-2 border-slate-800 hand-drawn-border-alt shadow-[5px_5px_0px_rgba(0,0,0,0.8)] flex flex-col relative rotate-[1deg] hover:rotate-[2deg] transition-all">
+                        <span className="text-slate-600 font-bold text-lg mb-2 flex items-center gap-2">
+                            <Zap className="w-5 h-5 text-green-700" /> Remaining to Borrow
+                        </span>
+                        <span className="text-3xl font-black text-green-800">
+                            {getConvertedValue(Math.max(0, maxBorrowUSD - (vaultData.ltv?.debtUSD || 0)))}
                         </span>
                     </div>
                 </div>
@@ -354,12 +392,22 @@ export default function VaultDashboard({ vaultAddress }: { vaultAddress: string 
                                 />
                                 <Button
                                     onClick={handleStake}
-                                    disabled={isStaking || isBorrowing}
+                                    disabled={isStaking || isBorrowing || isWithdrawing}
                                     className="h-auto px-6 text-lg bg-slate-800 hover:bg-slate-700 text-white font-bold hand-drawn-border shadow-[4px_4px_0px_rgba(0,0,0,0.4)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all disabled:opacity-50"
                                 >
                                     {isStaking ? <Loader2 className="w-5 h-5 animate-spin" /> : "Stake"}
                                 </Button>
                             </div>
+                            {/* Withdraw button — only when debt is 0 and vault has BNB */}
+                            {(vaultData?.ltv?.debtUSD || 0) === 0 && Number(vaultData?.balanceBNB || 0) > 0 && (
+                                <Button
+                                    onClick={handleWithdraw}
+                                    disabled={isWithdrawing || isStaking || isBorrowing}
+                                    className="mt-2 h-auto py-2 px-4 text-sm bg-orange-500 hover:bg-orange-400 text-white font-bold hand-drawn-border shadow-[3px_3px_0px_rgba(0,0,0,0.3)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all disabled:opacity-50"
+                                >
+                                    {isWithdrawing ? <Loader2 className="w-4 h-4 animate-spin" /> : `Withdraw ${vaultData.balanceBNB} BNB`}
+                                </Button>
+                            )}
                         </div>
 
                         {/* Dual Borrow UI */}
@@ -392,33 +440,37 @@ export default function VaultDashboard({ vaultAddress }: { vaultAddress: string 
                             </div>
                         </div>
 
-                        {/* Repay Debt */}
-                        {vaultData?.ltv?.debtUSD > 0 && (
-                            <div className="flex flex-col gap-3 w-full mt-6 border-t-2 border-dashed border-slate-300 pt-6">
-                                <label className="font-bold text-slate-700 flex items-center gap-2">
-                                    <CreditCard className="w-5 h-5 text-rose-500" /> Repay Debt (BNB)
-                                </label>
-                                <div className="flex gap-2">
-                                    <input
-                                        type="number"
-                                        step="0.001"
-                                        min="0"
-                                        placeholder="e.g. 0.05"
-                                        value={repayAmount}
-                                        onChange={(e) => setRepayAmount(e.target.value)}
-                                        className="flex-1 w-full border-2 border-slate-800 bg-white px-4 py-2 font-bold text-lg hand-drawn-border-alt focus:outline-none focus:ring-4 focus:ring-rose-200"
-                                    />
-                                    <Button
-                                        onClick={handleRepay}
-                                        disabled={isRepaying || isStaking || isBorrowing}
-                                        className="h-auto px-6 text-lg bg-rose-600 hover:bg-rose-500 text-white font-bold hand-drawn-border shadow-[4px_4px_0px_rgba(0,0,0,0.4)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all disabled:opacity-50"
-                                    >
-                                        {isRepaying ? <Loader2 className="w-5 h-5 animate-spin" /> : "Repay"}
-                                    </Button>
-                                </div>
-                                <p className="text-sm text-slate-500 font-medium">Outstanding: {getConvertedValue(vaultData.ltv.debtUSD)}. Full repayment unlocks vault.</p>
-                            </div>
-                        )}
+                        {/* Repay Debt — always visible */}
+                        <div className="flex flex-col gap-3 w-full mt-6 border-t-2 border-dashed border-slate-300 pt-6">
+                            <label className="font-bold text-slate-700 flex items-center gap-2">
+                                <CreditCard className="w-5 h-5 text-rose-500" /> Repay Debt (BNB)
+                            </label>
+                            {(vaultData?.ltv?.debtUSD || 0) > 0 ? (
+                                <>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="number"
+                                            step="0.001"
+                                            min="0"
+                                            placeholder="e.g. 0.05"
+                                            value={repayAmount}
+                                            onChange={(e) => setRepayAmount(e.target.value)}
+                                            className="flex-1 w-full border-2 border-slate-800 bg-white px-4 py-2 font-bold text-lg hand-drawn-border-alt focus:outline-none focus:ring-4 focus:ring-rose-200"
+                                        />
+                                        <Button
+                                            onClick={handleRepay}
+                                            disabled={isRepaying || isStaking || isBorrowing}
+                                            className="h-auto px-6 text-lg bg-rose-600 hover:bg-rose-500 text-white font-bold hand-drawn-border shadow-[4px_4px_0px_rgba(0,0,0,0.4)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all disabled:opacity-50"
+                                        >
+                                            {isRepaying ? <Loader2 className="w-5 h-5 animate-spin" /> : "Repay"}
+                                        </Button>
+                                    </div>
+                                    <p className="text-sm text-slate-500 font-medium">Outstanding: {getConvertedValue(vaultData.ltv.debtUSD)}. Full repayment unlocks vault.</p>
+                                </>
+                            ) : (
+                                <p className="text-sm text-green-700 font-bold bg-green-50 px-4 py-3 border-2 border-green-300 hand-drawn-border-alt">✅ No outstanding debt — you&apos;re clear! Borrow above to use your credit line.</p>
+                            )}
+                        </div>
 
                     </div>
 
