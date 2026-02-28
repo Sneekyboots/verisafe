@@ -27,7 +27,7 @@ const ERC20_SYMBOL_ABI = [
 ] as const;
 
 const MOCK_USDT = "0x882e7bd7e2028BE801B4d31222fAC8f4214D0c3d";
-const MOCK_VBNB = "0x47a826cd76899ffA955Ef667ACee4bF2C64C6da8";
+const MOCK_VBNB = "0x47a826Cd76899ffA955EF667ACEe4Bf2C64C6Da8";
 
 export default function VaultDashboard({ vaultAddress }: { vaultAddress: string }) {
     const [vaultData, setVaultData] = useState<any>(null);
@@ -143,7 +143,14 @@ export default function VaultDashboard({ vaultAddress }: { vaultAddress: string 
             });
 
             setStatusMsg("Waiting for blockchain confirmation...");
-            if (publicClient) await publicClient.waitForTransactionReceipt({ hash: hash1 });
+            if (publicClient) {
+                const receipt = await publicClient.waitForTransactionReceipt({ hash: hash1 });
+                if (receipt.status === "reverted") {
+                    setStatusMsg("❌ Credit request reverted on-chain. Oracle price may be stale — try again shortly.");
+                    setTimeout(() => setStatusMsg(""), 6000);
+                    return;
+                }
+            }
 
             setStatusMsg("Debt logged securely! Minting your borrowed tokens (Approve Tx 2 of 2)...");
 
@@ -172,7 +179,16 @@ export default function VaultDashboard({ vaultAddress }: { vaultAddress: string 
 
         } catch (err: any) {
             console.error(err);
-            setStatusMsg("Borrowing failed or rejected by user.");
+            const msg = err.shortMessage || err.message || "";
+            if (msg.includes("PriceStale")) {
+                setStatusMsg("❌ Oracle price is stale (>1 hour old). Wait for next oracle update.");
+            } else if (msg.includes("CreditAlreadyActive")) {
+                setStatusMsg("❌ You already have an active credit line. Repay first before borrowing again.");
+            } else if (msg.includes("InsufficientCollateral")) {
+                setStatusMsg("❌ Not enough collateral staked. Deposit more BNB first.");
+            } else {
+                setStatusMsg("❌ Borrowing failed: " + (msg || "Transaction rejected."));
+            }
         } finally {
             setIsBorrowing(false);
         }
