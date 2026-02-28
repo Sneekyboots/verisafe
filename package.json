@@ -2,7 +2,7 @@
   "name": "verisafe-api",
   "version": "1.0.0",
   "scripts": {
-    "start": "node index.js"
+    "start": "node server.js"
   },
   "dependencies": {
     "@bnb-chain/greenfield-js-sdk": "^2.2.2",
