@@ -79,7 +79,7 @@ export default class VerisafeClient {
   private baseUrl: string;
   private adminKey?: string;
 
-  constructor(baseUrl = "http://localhost:3001", adminKey?: string) {
+  constructor(baseUrl = "https://stakra-backend.onrender.com", adminKey?: string) {
     this.baseUrl = baseUrl;
     this.adminKey = adminKey;
   }

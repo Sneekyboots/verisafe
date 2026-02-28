@@ -6,10 +6,10 @@ import { WagmiProvider } from "wagmi";
 import { bscTestnet } from "wagmi/chains";
 import { getDefaultConfig, RainbowKitProvider } from "@rainbow-me/rainbowkit";
 import "@rainbow-me/rainbowkit/styles.css";
-import { VerisafeProvider } from "@/contexts/VerisafeContext";
+import { StakraProvider } from "@/contexts/StakraContext";
 
 const config = getDefaultConfig({
-    appName: "Verisafe",
+    appName: "Stakra",
     projectId: process.env.NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID || "2bb9dd3e1b6ccc8dc3ba5e89faa7324d",
     chains: [bscTestnet],
     ssr: false,
@@ -22,9 +22,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <WagmiProvider config={config}>
             <QueryClientProvider client={queryClient}>
                 <RainbowKitProvider>
-                    <VerisafeProvider>
+                    <StakraProvider>
                         {children}
-                    </VerisafeProvider>
+                    </StakraProvider>
                 </RainbowKitProvider>
             </QueryClientProvider>
         </WagmiProvider>
